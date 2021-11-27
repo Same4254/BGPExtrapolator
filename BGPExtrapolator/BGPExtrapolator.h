@@ -9,6 +9,8 @@
 
 #include <rapidcsv.h>
 
+#include <boost/container/stable_vector.hpp>
+
 /*
 Gao Rexford:
 	Exporting to a provider: AS cannot export routes learned from other providers or peers
@@ -47,6 +49,12 @@ Key changes:
 
 #define CUSTOMER_RELATIONSHIP_PRIORITY 2
 #define PEER_RELATIONSHIP_PRIORITY 1
+
+//This is the value that a path length of 0 will have
+//If an announcement has this path length, then it is not valid
+#define MAX_PATH_LENGTH 255
+
+#define SEPARATED_VALUES_DELIMETER '\t'
 
 /**
  * The priority is how two announcements are compared. An announcement with a larger pariority should be chosen over a lesser priority
@@ -128,6 +136,8 @@ struct GraphHandle {
 	std::vector<std::vector<ASProcessInfo*>> as_id_to_providers;
 	std::vector<std::vector<ASProcessInfo*>> as_id_to_peers;
 	std::vector<std::vector<ASProcessInfo*>> as_id_to_customers;
+
+	std::vector<AnnouncementStaticData> announcement_static_data;
 };
 
 /***************************** FILE I/O ******************************/
@@ -154,21 +164,23 @@ extern GraphHandle extrapolator_graph_from_relationship_csv(std::string file_pat
  * @param file_path_announcements 
  * @param origin_only 
 */
-extern void extrapolator_graph_seed_from_csv(GraphHandle& gHandle, std::string file_path_announcements, bool origin_only);
+extern void extrapolator_graph_seed_from_csv(GraphHandle& gHandle, size_t block, std::string file_path_announcements);
+
+extern void extrapolator_graph_allocate_loc_ribs(GraphHandle& gHandle, std::string file_path_announcements);
 
 extern void extrapolator_graph_results_csv_from_handle(GraphHandle& gHandle, std::string results_file_path);
 
 /***************************** INITIALIZATION ******************************/
 
 /**
- * Clears the announcements in the graph. All relationships are preserved and no memory is deallocated. 
- * Priorities are reset to the initial state to signify invalid announcements. 
+ * Resets the announcements in the graph. All relationships are preserved and no memory is deallocated. 
+ * Priorities are reset to the initial state to signify invalid announcements. All other fields of the priority are set to 0.
  * 
  * **All other fields of the announcements are left untouched**
  * 
- * @param gHandle -> The Graph to clear
+ * @param gHandle -> The Graph to reset
  */
-extern void extrapolator_graph_clear_announcements(GraphHandle& gHandle);
+extern void extrapolator_graph_reset_announcements(GraphHandle& gHandle);
 
 /***************************** PROPAGATION ******************************/
 
@@ -187,6 +199,10 @@ extern void extrapolator_graph_clear_announcements(GraphHandle& gHandle);
  * @return Whether there is a loop in the path
 */
 extern bool extrapolator_path_contains_loop(const std::vector<ASN>& as_path);
+extern std::vector<ASN> extrapolator_parse_path(std::string as_path_string);
+
+extern Prefix extrapolator_cidr_string_to_prefix(const std::string& s);
+extern std::string extrapolator_prefix_to_cidr_string(const Prefix& prefix);
 
 extern void extrapolator_propagate(GraphHandle& gHandle);
 

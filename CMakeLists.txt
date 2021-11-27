@@ -15,5 +15,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(rapidcsv)
 
+FetchContent_Declare(
+  boost
+  GIT_REPOSITORY "https://github.com/boostorg/boost.git"
+  GIT_TAG "boost-1.77.0"
+)
+
+FetchContent_MakeAvailable(boost)
+
 # Include sub-projects.
 add_subdirectory ("BGPExtrapolator")

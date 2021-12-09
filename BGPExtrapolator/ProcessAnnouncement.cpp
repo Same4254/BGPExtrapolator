@@ -3,7 +3,7 @@
 void extrapolator_as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers) {
 	Priority customer_priority;
 	customer_priority.allFields = 0;
-	customer_priority.relationship = CUSTOMER_RELATIONSHIP_PRIORITY;
+	customer_priority.relationship = RELATIONSHIP_PRIORITY_CUSTOMER;
 
 	for (ASProcessInfo* customer : customers) {
 		for (int i = 0; i < reciever.loc_rib.size(); i++) {
@@ -21,7 +21,7 @@ void extrapolator_as_process_customer_announcements(ASProcessInfo& reciever, std
 void extrapolator_as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers) {
 	Priority peer_priority;
 	peer_priority.allFields = 0;
-	peer_priority.relationship = PEER_RELATIONSHIP_PRIORITY;
+	peer_priority.relationship = RELATIONSHIP_PRIORITY_PEER;
 
 	for (ASProcessInfo* peer : peers) {
 		for (int i = 0; i < reciever.loc_rib.size(); i++) {

@@ -47,12 +47,13 @@ Key changes:
 //Index of the AS in contiguous memory
 #define ASN_ID uint32_t
 
-#define CUSTOMER_RELATIONSHIP_PRIORITY 2
-#define PEER_RELATIONSHIP_PRIORITY 1
+#define RELATIONSHIP_PRIORITY_ORIGIN 3
+#define RELATIONSHIP_PRIORITY_CUSTOMER 2
+#define RELATIONSHIP_PRIORITY_PEER 1
+#define RELATIONSHIP_PRIORITY_PROVIDER 0
 
 //This is the value that a path length of 0 will have
-//If an announcement has this path length, then it is not valid
-#define MAX_PATH_LENGTH 255
+#define MIN_PATH_LENGTH 0xff
 
 #define SEPARATED_VALUES_DELIMETER '\t'
 
@@ -70,6 +71,7 @@ Key changes:
  * The path length property is non-intuitive. Here, a smaller path length is preffered. 
  * However, to keep the simple integer comparison, the smaller path length must result in a larger integer in the field in the priority. 
  * Thus, we subtract from the maximum integer as we propagate rather than increase from 0. That way, a smaller path results in a larger priority.
+ * A path length of 0 means that the announcement is invalid.
  * 
  * The reservedField does nothing as of writing
 */
@@ -121,16 +123,24 @@ struct ASProcessInfo {
 	std::vector<AnnouncementDynamicData> loc_rib;
 };
 
+struct ASRelationshipInfo {
+	ASN_ID asn_id;
+	ASN asn;
+	
+	int rank;
+	std::set<ASN> peers, customers, providers;
+};
+
 /**
  * All of the information about the graph, parsed from the csv files
 */
 struct GraphHandle {
 	//Takes the ASN and gets the corresponding ASN_ID. An ASN_ID is the index of the process info for that AS
 	std::unordered_map<ASN, ASN_ID> asn_to_asn_id;
+	std::vector<ASRelationshipInfo> as_id_to_relationship_info;
 
 	//Do not move or append to these lists after initialization!!!
 	//TODO: replace with a custom allocator and specific data structure for rank iteration and random access
-	
 	std::vector<ASProcessInfo> as_process_info;
 	std::vector<std::vector<ASProcessInfo*>> as_process_info_by_rank;
 	std::vector<std::vector<ASProcessInfo*>> as_id_to_providers;

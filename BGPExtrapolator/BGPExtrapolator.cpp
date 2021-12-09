@@ -79,7 +79,7 @@ std::string extrapolator_prefix_to_cidr_string(const Prefix& prefix) {
 	uint32_t temp_netmask = prefix.netmask;
 	int num_bits = 0;
 
-	while (temp_netmask > 0) {
+	while (temp_netmask != 0) {
 		temp_netmask = temp_netmask >> 1;
 		num_bits++;
 	}

@@ -9,8 +9,6 @@
 
 #include <rapidcsv.h>
 
-#include <boost/container/stable_vector.hpp>
-
 /*
 Gao Rexford:
 	Exporting to a provider: AS cannot export routes learned from other providers or peers
@@ -54,6 +52,9 @@ Key changes:
 
 //This is the value that a path length of 0 will have
 #define MIN_PATH_LENGTH 0xff
+
+//Length of the path that indicated the announcement is just allocated bytes
+#define INVALID_PATH_LENGTH 0
 
 #define SEPARATED_VALUES_DELIMETER '\t'
 
@@ -107,7 +108,7 @@ struct AnnouncementStaticData {
  * This also includes a pointer to the static data it is associated with.
 */
 struct AnnouncementDynamicData {
-	ASN_ID received_from_asn;
+	ASN_ID received_from_id;
 	Priority priority;
 	AnnouncementStaticData *static_data;
 };
@@ -118,6 +119,8 @@ struct AnnouncementDynamicData {
 struct ASProcessInfo {
 	ASN_ID asn_id;
 	ASN asn;
+
+	bool rand_tiebrake_value;
 
 	//TODO: replace with prefix announcement map
 	std::vector<AnnouncementDynamicData> loc_rib;
@@ -213,9 +216,12 @@ extern std::vector<ASN> extrapolator_parse_path(std::string as_path_string);
 
 extern Prefix extrapolator_cidr_string_to_prefix(const std::string& s);
 extern std::string extrapolator_prefix_to_cidr_string(const Prefix& prefix);
+extern uint8_t extrapolator_tiny_hash(ASN asn);
 
 extern void extrapolator_propagate(GraphHandle& gHandle);
 
 extern void extrapolator_as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers);
 extern void extrapolator_as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers);
 extern void extrapolator_as_process_provider_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& providers);
+extern inline void extrapoaltor_as_process_announcement(ASProcessInfo& reciever, const ASN_ID &recieved_from_id, const uint32_t &prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority);
+extern inline void extrapoaltor_as_process_announcement_random_tiebrake(ASProcessInfo& reciever, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority, bool tiebrake_keep_original_ann);

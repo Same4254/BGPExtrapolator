@@ -50,6 +50,7 @@ GraphHandle extrapolator_graph_from_relationship_csv(std::string file_path_relat
 	for (int i = 0; i < gHandle.as_id_to_relationship_info.size(); i++) {
 		gHandle.as_process_info[i].asn = gHandle.as_id_to_relationship_info[i].asn;
 		gHandle.as_process_info[i].asn_id = gHandle.as_id_to_relationship_info[i].asn_id;
+		gHandle.as_process_info[i].rand_tiebrake_value = extrapolator_tiny_hash(gHandle.as_process_info[i].asn) % 2 == 0;
 
 		gHandle.as_process_info_by_rank[gHandle.as_id_to_relationship_info[i].rank].push_back(&gHandle.as_process_info[i]);
 
@@ -66,7 +67,7 @@ GraphHandle extrapolator_graph_from_relationship_csv(std::string file_path_relat
 	return gHandle;
 }
 
-void extrapolator_graph_seed_from_csv(GraphHandle& gHandle, size_t block, std::string file_path_announcements, bool origin_only) {
+void extrapolator_graph_seed_from_csv(GraphHandle& gHandle, size_t block, std::string file_path_announcements, bool origin_only, bool random_tiebraking) {
 	rapidcsv::Document announcements(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
 	extrapolator_graph_reset_announcements(gHandle);
@@ -92,19 +93,27 @@ void extrapolator_graph_seed_from_csv(GraphHandle& gHandle, size_t block, std::s
 		uint32_t prefix_id = announcements.GetCell<uint32_t>("prefix_id", row_index);
 		uint32_t prefix_block_id = announcements.GetCell<uint32_t>("prefix_block_id", row_index);
 
+		prefix.id = prefix_id;
+		prefix.block_id = prefix_block_id;
+
 		//**** SEEDING
 		if (as_path.size() == 0)
 			continue;
 
-		auto end = origin_only ? as_path.rbegin() + 1 : as_path.rend();
-		for (int i = as_path.size() - 1; i >= 0; i--) {
-
+		int end_index = origin_only ? as_path.size() - 1 : 0;
+		for (int i = as_path.size() - 1; i >= end_index; i--) {
 			// If AS not in the graph, skip it
+			// TODO: This should be an error
 			auto asn_search = gHandle.asn_to_asn_id.find(as_path[i]);
 			if (asn_search == gHandle.asn_to_asn_id.end())
 				continue;
 
+			//If there is prepending, then just keep going along the path. The length is accounted for.
+			if (i < as_path.size() - 1 && as_path[i] == as_path[i + 1])
+				continue;
+
 			ASN_ID asn_id = asn_search->second;
+			ASProcessInfo &recieving_as = gHandle.as_process_info[asn_id];
 
 			uint8_t relationship = RELATIONSHIP_PRIORITY_ORIGIN;
 			if (i != as_path.size() - 1) {
@@ -121,8 +130,29 @@ void extrapolator_graph_seed_from_csv(GraphHandle& gHandle, size_t block, std::s
 			priority.allFields = 0;
 			priority.pathLength = MIN_PATH_LENGTH - (i - (as_path.size() - 1));
 			priority.relationship = relationship;
+			priority.seeded = 1;
 
+			ASN_ID recieved_from_id = asn_id;
+			if (i < as_path.size() - 1)
+				recieved_from_id = gHandle.asn_to_asn_id.at(as_path[i + 1]);
 
+			AnnouncementDynamicData new_announcement;
+			new_announcement.static_data = &gHandle.announcement_static_data[row_index];
+
+			//If there exists an announcement for this prefix already
+			if (recieving_as.loc_rib[prefix_block_id].priority.allFields != 0) {
+				AnnouncementDynamicData& current_announcement = recieving_as.loc_rib[prefix_block_id];
+				if (timestamp > current_announcement.static_data->timestamp) {
+					continue;
+				} else if(timestamp == current_announcement.static_data->timestamp) {
+					extrapoaltor_as_process_announcement_random_tiebrake(recieving_as, recieved_from_id, prefix_block_id, new_announcement, priority, recieving_as.rand_tiebrake_value);
+				} else {
+					new_announcement.received_from_id = recieved_from_id;
+					new_announcement.priority = priority;
+
+					recieving_as.loc_rib[prefix_block_id] = new_announcement;
+				}
+			}
 		}
 	}
 }

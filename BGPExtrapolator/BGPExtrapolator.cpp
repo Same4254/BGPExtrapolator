@@ -95,6 +95,15 @@ std::string extrapolator_prefix_to_cidr_string(const Prefix& prefix) {
 	return oss.str();
 }
 
+uint8_t extrapolator_tiny_hash(ASN asn) {
+	uint8_t mask = 0xFF;
+	uint8_t value = 0;
+	for (size_t i = 0; i < sizeof(asn); i++)
+		value = (value ^ (mask & (asn >> (i * 8)))) * 3;
+
+	return value;
+}
+
 int main() {
 	//ASProcessInfo reciever;
 	//ASProcessInfo customer1, customer2;

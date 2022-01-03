@@ -68,18 +68,37 @@ namespace BGPExtrapolator {
 		}
 
 		//***** Local RIB allocation *****//
+
+		// Maps each block to the number of announcements in that block. 
+		// Used to allocate the size of the static announcement data (which is the maximum number of announcements used in any block)
+		std::map<int, int> block_to_num_announcements;
+
 		size_t maximum_prefix_block_id = 0;
 		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
 			size_t prefix_block_id = announcements_csv.GetCell<size_t>("prefix_block_id", row_index);
+			int block_id = announcements_csv.GetCell<int>("block_id", row_index);
+
 			if (prefix_block_id > maximum_prefix_block_id)
 				maximum_prefix_block_id = prefix_block_id;
+
+			auto search = block_to_num_announcements.find(block_id);
+			if (search == block_to_num_announcements.end())
+				block_to_num_announcements.insert(std::make_pair(block_id, 1));
+			else
+				search->second++;
 		}
 
 		for (auto& process_info : as_process_info)
 			process_info.loc_rib.resize(maximum_prefix_block_id);
 
 		//Allocate space for all of the static information. Don't resize again so that the pointers to the data do not change
-		announcement_static_data.resize(maximum_prefix_block_id);
+		int maximum_announcement_count = 0;
+		for (auto it = block_to_num_announcements.begin(); it != block_to_num_announcements.end(); it++) {
+			if (it->second > maximum_announcement_count)
+				maximum_announcement_count = it->second;
+		}
+
+		announcement_static_data.resize(maximum_announcement_count);
 
 		reset_announcements();
 	}
@@ -116,6 +135,7 @@ namespace BGPExtrapolator {
 			prefix.block_id = prefix_block_id;
 
 			seed_path(as_path, &announcement_static_data[static_data_index], prefix, timestamp, origin_only, random_tiebraking);
+			static_data_index++;
 		}
 	}
 

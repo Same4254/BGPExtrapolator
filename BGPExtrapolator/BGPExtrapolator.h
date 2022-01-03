@@ -185,7 +185,7 @@ namespace BGPExtrapolator {
 
 		std::vector<AnnouncementStaticData> announcement_static_data;
 
-		rapidcsv::Document relationships_csv, announcements_csv;
+		rapidcsv::Document announcements_csv;
 
 		/**
 		 * Creates the extrapolator handle from a CSV of relationship information. The connections made will obey multi-home behavior and will be organized into ranks.

@@ -3,9 +3,10 @@
 namespace BGPExtrapolator {
 
 	Graph::Graph(const std::string& file_path_relationships, const std::string& file_path_announcements) 
-		: relationships_csv(file_path_relationships, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER))
-		, announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER)) 
+		: announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER)) 
 	{
+		rapidcsv::Document relationships_csv(file_path_relationships, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
+
 		//***** Relationship Parsing *****//
 		as_process_info.resize(relationships_csv.GetRowCount());
 		as_id_to_providers.resize(relationships_csv.GetRowCount());
@@ -175,7 +176,7 @@ namespace BGPExtrapolator {
 
 			Priority priority;
 			priority.allFields = 0;
-			priority.pathLength = MIN_PATH_LENGTH - (i - (as_path.size() - 1));
+			priority.pathLength = MIN_PATH_LENGTH - (i - (as_path.size() - 1));//This should be fine because there *should* be no path longer than 254 in length
 			priority.relationship = relationship;
 			priority.seeded = 1;
 
@@ -223,6 +224,7 @@ namespace BGPExtrapolator {
 				as_process_peer_announcements(*as, as_id_to_peers[as->asn_id]);
 
 		// ************ Propagate Down ************//
+		//Customer looks up to the provider and looks at its data, that is why the - 2 is there
 		for (int i = as_process_info_by_rank.size() - 2; i >= 0; i--)
 			for (auto& customer : as_process_info_by_rank[i])
 				as_process_peer_announcements(*customer, as_id_to_peers[customer->asn_id]);

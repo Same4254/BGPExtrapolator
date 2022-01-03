@@ -2,36 +2,38 @@
 
 namespace BGPExtrapolator {
 
-	Graph::Graph(const std::string &file_path_relationships) {
-		rapidcsv::Document relationship_csv(file_path_relationships, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
-
-		as_process_info.resize(relationship_csv.GetRowCount());
-		as_id_to_providers.resize(relationship_csv.GetRowCount());
-		as_id_to_peers.resize(relationship_csv.GetRowCount());
-		as_id_to_customers.resize(relationship_csv.GetRowCount());
-		as_id_to_relationship_info.resize(relationship_csv.GetRowCount());
+	Graph::Graph(const std::string& file_path_relationships, const std::string& file_path_announcements) 
+		: relationships_csv(file_path_relationships, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER))
+		, announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER)) 
+	{
+		//***** Relationship Parsing *****//
+		as_process_info.resize(relationships_csv.GetRowCount());
+		as_id_to_providers.resize(relationships_csv.GetRowCount());
+		as_id_to_peers.resize(relationships_csv.GetRowCount());
+		as_id_to_customers.resize(relationships_csv.GetRowCount());
+		as_id_to_relationship_info.resize(relationships_csv.GetRowCount());
 
 		size_t maximum_rank = 0;
 		ASN_ID next_id = 0;
 
 		//Store the relationships, assign IDs, and find the maximum rank
-		for (int row_index = 0; row_index < relationship_csv.GetRowCount(); row_index++) {
+		for (int row_index = 0; row_index < relationships_csv.GetRowCount(); row_index++) {
 			ASRelationshipInfo& relationship_info = as_id_to_relationship_info[row_index];
 
-			relationship_info.asn = relationship_csv.GetCell<ASN>("asn", row_index);
+			relationship_info.asn = relationships_csv.GetCell<ASN>("asn", row_index);
 			relationship_info.asn_id = next_id;
 
 			asn_to_asn_id.insert({ relationship_info.asn, as_id_to_relationship_info[row_index].asn_id });
 
-			int rank = relationship_csv.GetCell<int>("propagation_rank", row_index);
+			int rank = relationships_csv.GetCell<int>("propagation_rank", row_index);
 			as_id_to_relationship_info[row_index].rank = rank;
 
 			if (rank > maximum_rank)
 				maximum_rank = rank;
 
-			std::vector<ASN> providers = parse_path(relationship_csv.GetCell<std::string>("providers", row_index));
-			std::vector<ASN> peers = parse_path(relationship_csv.GetCell<std::string>("peers", row_index));
-			std::vector<ASN> customers = parse_path(relationship_csv.GetCell<std::string>("customers", row_index));
+			std::vector<ASN> providers = parse_ASN_list(relationships_csv.GetCell<std::string>("providers", row_index));
+			std::vector<ASN> peers = parse_ASN_list(relationships_csv.GetCell<std::string>("peers", row_index));
+			std::vector<ASN> customers = parse_ASN_list(relationships_csv.GetCell<std::string>("customers", row_index));
 
 			for (auto asn : providers)
 				relationship_info.providers.insert(asn);
@@ -51,7 +53,7 @@ namespace BGPExtrapolator {
 		for (int i = 0; i < as_id_to_relationship_info.size(); i++) {
 			as_process_info[i].asn = as_id_to_relationship_info[i].asn;
 			as_process_info[i].asn_id = as_id_to_relationship_info[i].asn_id;
-			as_process_info[i].rand_tiebrake_value = tiny_hash(as_process_info[i].asn) % 2 == 0;
+			as_process_info[i].rand_tiebrake_value = galois_hash(as_process_info[i].asn) % 2 == 0;
 
 			as_process_info_by_rank[as_id_to_relationship_info[i].rank].push_back(&as_process_info[i]);
 
@@ -64,49 +66,66 @@ namespace BGPExtrapolator {
 			for (ASN customer : as_id_to_relationship_info[i].customers)
 				as_id_to_customers[i].push_back(&as_process_info[asn_to_asn_id[customer]]);
 		}
+
+		//***** Local RIB allocation *****//
+		size_t maximum_prefix_block_id = 0;
+		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
+			size_t prefix_block_id = announcements_csv.GetCell<size_t>("prefix_block_id", row_index);
+			if (prefix_block_id > maximum_prefix_block_id)
+				maximum_prefix_block_id = prefix_block_id;
+		}
+
+		for (auto& process_info : as_process_info)
+			process_info.loc_rib.resize(maximum_prefix_block_id);
+
+		//Allocate space for all of the static information. Don't resize again so that the pointers to the data do not change
+		announcement_static_data.resize(maximum_prefix_block_id);
+
+		reset_announcements();
 	}
 
 	void Graph::reset_announcements() {
-		for (auto& info : as_process_info)
-			for (auto& dynamic_ann : info.loc_rib)
-				dynamic_ann.priority.allFields = 0;
+		for (auto& info : as_process_info) {
+		for (auto& dynamic_ann : info.loc_rib) {
+			dynamic_ann.priority.allFields = 0;
+			dynamic_ann.static_data = nullptr;
+		}}
 	}
 
-	void Graph::seed_from_csv(size_t block, std::string file_path_announcements, bool origin_only, bool random_tiebraking) {
-		rapidcsv::Document announcements(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
+	void Graph::seed_block_from_csv(size_t block, bool origin_only, bool random_tiebraking) {
+		size_t static_data_index = 0;
 
-		//TODO: make a check here to avoid doing this every time (EDIT: though this will likely only be called once in each process... Maybe it does not even need to be its own function)
-		allocate_loc_ribs(announcements);
-
-		//Allocate space for all of the static information. Don't resize again so that the pointers to the data do not change
-		announcement_static_data.resize(announcements.GetRowCount());
-
-		for (size_t row_index = 0; row_index < announcements.GetRowCount(); row_index++) {
+		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
 			//***** PARSING
-
-			if (announcements.GetCell<int64_t>("block_id", row_index) != block)
+			if (announcements_csv.GetCell<int64_t>("block_id", row_index) != block)
 				continue;
 
-			std::string prefix_string = announcements.GetCell<std::string>("prefix", row_index);
-			std::string as_path_string = announcements.GetCell<std::string>("as_path", row_index);
+			std::string prefix_string = announcements_csv.GetCell<std::string>("prefix", row_index);
+			std::string as_path_string = announcements_csv.GetCell<std::string>("as_path", row_index);
 
 			Prefix prefix = cidr_string_to_prefix(prefix_string);
-			std::vector<ASN> as_path = parse_path(as_path_string);
+			std::vector<ASN> as_path = parse_ASN_list(as_path_string);
 
-			int64_t timestamp = announcements.GetCell<int64_t>("timestamp", row_index);
-			ASN origin = announcements.GetCell<ASN>("origin", row_index);
+			int64_t timestamp = announcements_csv.GetCell<int64_t>("timestamp", row_index);
+			ASN origin = announcements_csv.GetCell<ASN>("origin", row_index);
 
-			uint32_t prefix_id = announcements.GetCell<uint32_t>("prefix_id", row_index);
-			uint32_t prefix_block_id = announcements.GetCell<uint32_t>("prefix_block_id", row_index);
+			uint32_t prefix_id = announcements_csv.GetCell<uint32_t>("prefix_id", row_index);
+			uint32_t prefix_block_id = announcements_csv.GetCell<uint32_t>("prefix_block_id", row_index);
 
-			prefix.id = prefix_id;
+			prefix.global_id = prefix_id;
 			prefix.block_id = prefix_block_id;
+
+			seed_path(as_path, &announcement_static_data[static_data_index], prefix, timestamp, origin_only, random_tiebraking);
 		}
 	}
 
-	void Graph::seed_path(std::vector<ASN>& as_path, Prefix& prefix, int64_t timestamp, AnnouncementStaticData* static_data, bool origin_only, bool random_tiebraking) {
+	void Graph::seed_path(std::vector<ASN>& as_path, AnnouncementStaticData* static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool random_tiebraking) {
 		if (as_path.size() == 0)
 			return;
+
+		static_data->origin = as_path[as_path.size() - 1];
+		static_data->prefix = prefix;
+		static_data->timestamp = timestamp;
 
 		int end_index = origin_only ? as_path.size() - 1 : 0;
 		for (int i = as_path.size() - 1; i >= end_index; i--) {
@@ -145,7 +164,7 @@ namespace BGPExtrapolator {
 				recieved_from_id = asn_to_asn_id.at(as_path[i + 1]);
 
 			AnnouncementDynamicData new_announcement;
-			new_announcement.static_data = static_data;
+			new_announcement.static_data = &announcement_static_data[prefix.block_id];
 
 			//If there exists an announcement for this prefix already
 			if (recieving_as.loc_rib[prefix.block_id].priority.allFields != 0) {
@@ -189,21 +208,7 @@ namespace BGPExtrapolator {
 				as_process_peer_announcements(*customer, as_id_to_peers[customer->asn_id]);
 	}
 
-	void Graph::generate_results_csv(std::string results_file_path) {
+	void Graph::generate_results_csv(const std::string& results_file_path) {
 
-	}
-
-	void Graph::allocate_loc_ribs(rapidcsv::Document& announcements) {
-		size_t maximum_prefix_block_id = 0;
-		for (size_t row_index = 0; row_index < announcements.GetRowCount(); row_index++) {
-			size_t prefix_block_id = announcements.GetCell<size_t>("prefix_block_id", row_index);
-			if (prefix_block_id > maximum_prefix_block_id)
-				maximum_prefix_block_id = prefix_block_id;
-		}
-
-		for (auto& process_info : as_process_info)
-			process_info.loc_rib.resize(maximum_prefix_block_id);
-
-		reset_announcements();
 	}
 }

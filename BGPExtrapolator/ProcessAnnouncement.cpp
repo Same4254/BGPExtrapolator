@@ -1,7 +1,6 @@
 #include "BGPExtrapolator.h"
 
 namespace BGPExtrapolator {
-
 	void as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers) {
 		Priority customer_priority;
 		customer_priority.allFields = 0;

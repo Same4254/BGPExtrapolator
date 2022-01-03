@@ -16,23 +16,25 @@ namespace BGPExtrapolator {
 		return containsLoop;
 	}
 
-	std::vector<ASN> parse_path(std::string as_path_string) {
+	std::vector<ASN> parse_ASN_list(const std::string& as_path_string) {
 		std::vector<ASN> as_path;
-		// Remove brackets from string
-		as_path_string.erase(std::find(as_path_string.begin(), as_path_string.end(), '}'));
-		as_path_string.erase(std::find(as_path_string.begin(), as_path_string.end(), '{'));
 
-		// Fill as_path vector from parsing string
-		std::stringstream str_stream(as_path_string);
-		std::string tokenN;
-		while (getline(str_stream, tokenN, ',')) {
-			as_path.push_back(std::stoul(tokenN));
-		}
+		const char* c_as_path_string = as_path_string.c_str();
+		char* next;
+		long val = strtol(c_as_path_string + 1, &next, 10);
+
+		//Stop early if there is nothing in the list
+		if (!val)
+			return as_path;
+
+		do {
+			as_path.push_back(val);
+		} while ((val = strtol(next + 1, &next, 10)));
 
 		return as_path;
 	}
 
-	Prefix cidr_string_to_prefix(std::string s) {
+	Prefix cidr_string_to_prefix(const std::string &s) {
 		Prefix p;
 
 		size_t slash_index = s.find("/");
@@ -74,11 +76,11 @@ namespace BGPExtrapolator {
 		return oss.str();
 	}
 
-	uint8_t tiny_hash(const ASN& asn) {
+	uint8_t galois_hash(const ASN& asn) {
 		uint8_t mask = 0xFF;
 		uint8_t value = 0;
 		for (size_t i = 0; i < sizeof(asn); i++)
-			value = (value ^ (mask & (asn >> (i * 8)))) * 3;
+			value = (value ^ (mask & (asn >> (i * 8)))) * GALOIS_HASH_KEY;
 
 		return value;
 	}

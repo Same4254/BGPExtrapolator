@@ -52,9 +52,8 @@ namespace BGPExtrapolator {
 		// Also put the pointer to other AS data in relationship structures 
 		as_process_info_by_rank.resize(maximum_rank + 1);
 		for (int i = 0; i < as_id_to_relationship_info.size(); i++) {
-			as_process_info[i].asn = as_id_to_relationship_info[i].asn;
 			as_process_info[i].asn_id = as_id_to_relationship_info[i].asn_id;
-			as_process_info[i].rand_tiebrake_value = galois_hash(as_process_info[i].asn) % 2 == 0;
+			as_process_info[i].rand_tiebrake_value = galois_hash(as_id_to_relationship_info[i].asn) % 2 == 0;
 
 			as_process_info_by_rank[as_id_to_relationship_info[i].rank].push_back(&as_process_info[i]);
 

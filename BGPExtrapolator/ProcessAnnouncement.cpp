@@ -10,13 +10,7 @@ namespace BGPExtrapolator {
 			for (int i = 0; i < reciever.loc_rib.size(); i++) {
 				customer_priority.pathLength = customer->loc_rib[i].priority.pathLength - 1;//See priority struct for why this is subtraction
 
-				as_process_announcement(reciever, customer->asn, i, customer->loc_rib[i], customer_priority);
-
-				//if (customer_priority.allFields >= reciever.loc_rib[i].priority.allFields) {
-				//	reciever.loc_rib[i] = customer->loc_rib[i];
-				//	reciever.loc_rib[i].received_from_asn = customer->asn;
-				//	reciever.loc_rib[i].priority = customer_priority;
-				//}
+				as_process_announcement(reciever, customer->asn_id, i, customer->loc_rib[i], customer_priority);
 			}
 		}
 	}
@@ -30,13 +24,7 @@ namespace BGPExtrapolator {
 			for (int i = 0; i < reciever.loc_rib.size(); i++) {
 				peer_priority.pathLength = peer->loc_rib[i].priority.pathLength - 1;
 
-				as_process_announcement(reciever, peer->asn, i, peer->loc_rib[i], peer_priority);
-
-				//if (peer_priority.allFields >= reciever.loc_rib[i].priority.allFields) {
-				//	reciever.loc_rib[i] = peer->loc_rib[i];
-				//	reciever.loc_rib[i].received_from_asn = peer->asn;
-				//	reciever.loc_rib[i].priority = peer_priority;
-				//}
+				as_process_announcement(reciever, peer->asn_id, i, peer->loc_rib[i], peer_priority);
 			}
 		}
 	}
@@ -50,13 +38,7 @@ namespace BGPExtrapolator {
 				provider_priority.pathLength = provider->loc_rib[i].priority.pathLength - 1;
 				provider_priority.relationship = provider->loc_rib[i].priority.relationship;
 
-				as_process_announcement(reciever, provider->asn, i, provider->loc_rib[i], provider_priority);
-
-				//if (provider_priority.allFields >= reciever.loc_rib[i].priority.allFields) {
-				//	reciever.loc_rib[i] = provider->loc_rib[i];
-				//	reciever.loc_rib[i].received_from_asn = provider->asn;
-				//	reciever.loc_rib[i].priority = provider_priority;
-				//}
+				as_process_announcement(reciever, provider->asn_id, i, provider->loc_rib[i], provider_priority);
 			}
 		}
 	}

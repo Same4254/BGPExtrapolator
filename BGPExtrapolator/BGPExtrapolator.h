@@ -51,7 +51,7 @@ Key changes:
 #define RELATIONSHIP_PRIORITY_PEER 1
 #define RELATIONSHIP_PRIORITY_PROVIDER 0
 
-//This is the value that a path length of 0 will have (see comments on the Prefix struct)
+//This is the value that a path length of 0 will have (see comments on the Priority struct)
 #define MIN_PATH_LENGTH 0xff
 
 #define GALOIS_HASH_KEY 3
@@ -126,7 +126,7 @@ namespace BGPExtrapolator {
 	 * Dynamic data of an announcement. This is information about the announcement that can change during the propagation stage.
 	 * This also includes a pointer to the static data it is associated with.
 	 * 
-	 * PERF_TODO: the pointer to static data could be replaced with a 32 bit index rather than a 64 bit pointer. This may improve cache performance
+	 * PERF_TODO: the pointer to static data could be replaced with a 32 bit index rather than a pointer. This may improve cache performance? Announcement size would go down, but it would require a refrence to the static announcement structure...
 	*/
 	struct AnnouncementDynamicData {
 		ASN_ID received_from_id;
@@ -139,8 +139,8 @@ namespace BGPExtrapolator {
 	 * This means that when we want one AS to pull all of the announcements from a neighbor, all that is needed is the two ASProcessInfo structs to make this decision
 	*/
 	struct ASProcessInfo {
-		ASN_ID asn_id;// Contiguous index of ASes for vector lookups
-		ASN asn;// Actual AS number for the AS
+		// Contiguous index of ASes for vector lookups
+		ASN_ID asn_id;
 
 		//Precomputed random boolean for tiebraking. This randomization is determined by the ASN to be deterministic. See tiny_hash for implementation details
 		bool rand_tiebrake_value;
@@ -252,7 +252,7 @@ namespace BGPExtrapolator {
 		 * 
 		 * Export to Peer:
 		 *  - Provider routes: no
-		 *  - Peer routs: no
+		 *  - Peer routes: no
 		 *  - Customer routes: yes
 		*/
 		void propagate();
@@ -304,15 +304,82 @@ namespace BGPExtrapolator {
 	*/
 	extern std::vector<ASN> parse_ASN_list(const std::string &as_path_string);
 
+	/**
+	 * Takes the cidr string from the csv and converts it into a Prefix struct. 
+	 * 
+	 * For example an address of 192.168.1.1 is converted into bits such that the binary representation of 192 is the most significant bits and so on...
+	 * The netmask from the dataset states how many 1 bits there are. So the netmask representation here is an integer with that many bits set to 1, start from the least significant bits
+	 * 
+	 * Example string could be: "192.168.1.1/24"
+	 * 
+	 * TODO: IPv6 support
+	 * 
+	 * @param s -> cidr notation of the prefix
+	 * @return -> A Prefix struct with the address and netmask filled in. Block ids are left untouched.
+	*/
 	extern Prefix cidr_string_to_prefix(const std::string &s);
+
+	/**
+	 * Takes the internal representation of a Prefix and converts it back into a cidr string. 
+	 * A round trip starting with a string, converting to the structure, and back to the string should result in the same exact string.
+	 * 
+	 * TODO: IPv6 support
+	 * PERF_TODO: Is it possible to not need this conversion? For plain BGP it is not neccessary, but for ROV knowledge of the netmask will be neccessary
+	 * 
+	 * @param prefix -> The prefix structure to convert into a string
+	 * @return Cidr notation of the prefix
+	*/
 	extern std::string prefix_to_cidr_string(const Prefix& prefix);
 
+	/**
+	 * Small Galois hash used for deterministic randomization on the ASN. Used to determine how the AS will perform tiebrakes.
+	 * A fixed key is used such that the decision is the same for every run, no matter the ordering or the topology.
+	 * 
+	 * @param asn -> ASN of the AS 
+	 * @return The hash of the ASN
+	*/
 	extern uint8_t galois_hash(const ASN &asn);
+
+	/*
+	* PERF_TODO: 
+	* 
+	* It may be easier to instead of just having the priority as a local varaible in these functions to actually construct a single temporary announcement that is copied into the local rib
+	* This temporary announcemnt would be a local variable above the for-loop scope, since much of the information would be the same. May not actually be any better, but worth looking into
+	* 
+	* PERF_TODO:
+	* 
+	* Currently, with the >= on the priority comparison, two announcements with a priority of 0 will cause a copy into the local rib, when the announcement is completely useless
+	*/
 
 	extern void as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers);
 	extern void as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers);
 	extern void as_process_provider_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& providers);
 
+	/**
+	 * The goal of this function is to perform the comparison of priorities and if the other priotirty is better, then the announcement is accepted and copied in the local rib of the reciever at the given prefix_block_id.
+	 * 
+	 * The announcement from the other AS is a constant refrence. This is becuase it should be the actual refrence to the announcement in the local rib of the other AS. 
+	 * The reason for this is to avoid constructing an entire temporary announcement with the new priority, only to deconstruct it immediately if it is regected.
+	 * Rather, the guiding principle is to only copy an announcement when it is neccessary
+	 * 
+	 * @param reciever -> AS recieving the announcement. If accepted, the announcement will be placed into the local rib of this AS at the specified prefix_block_id index
+	 * @param recieved_from_id -> The ASN_ID of the AS sending this announcement. Used for traceback in the results stage
+	 * @param prefix_block_id -> index in the local ribs of the announcements in question
+	 * @param other_announcement -> Constant refrence to the announcement in the sender's local rib
+	 * @param temp_priority -> Priority containing the relationship and path length information if the announcement were to be accepted into the reciever's local rib
+	*/
 	extern inline void as_process_announcement(ASProcessInfo& reciever, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority);
+
+	/**
+	 * PERF_TODO: It may be worthwhile to split this into two functions, that way a higher scope may be able to decide which tiebraking method to use in order to avoid the branch this function causes.
+	 *		This could be important because a branch predictor may not pick up on this because the boolean is meant to be randomized
+	 * 
+	 * Much like the non-tiebrake version of this function (all other parameters serve the same purpose), except this adds further functionality in the case of a tiebrake (equal priority).
+	 * 
+	 * If tiebrake_keep_original_ann is true, then the announcement already in the local rib will be kept without question (on a priority tiebrake)
+	 * If it is false, then a tiebrake of priorities will result in accepting the new announcement
+	 * 
+	 * @param tiebrake_keep_original_ann -> Whether or not to determine a tiebrake by keeping the first announcement
+	*/
 	extern inline void as_process_announcement_random_tiebrake(ASProcessInfo& reciever, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority, bool tiebrake_keep_original_ann);
 }

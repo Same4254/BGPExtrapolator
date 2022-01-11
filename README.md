@@ -1,4 +1,4 @@
-# BGPExtrapolator
+# BGPExtrapolator [In Development]
 
 A High-Performance, Cross-Compatable tool to simulate the BGP network, under Gao Rexford constraints, using real world CAIDA relationships and MRT RIB dumps. The goal of this tool is to accurately seed and propagate announcements throughout the BGP network to predict the local RIB of ASes in the network.
 

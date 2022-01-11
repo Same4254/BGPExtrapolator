@@ -130,8 +130,20 @@ namespace BGPExtrapolator {
 	*/
 	struct AnnouncementDynamicData {
 		ASN_ID received_from_id;
+		ASN received_from_asn;
 		Priority priority;
-		AnnouncementStaticData* static_data;
+		AnnouncementStaticData* static_data;//NOTE: this struct does not own the static data pointer and is NOT responsible for cleaning it up
+
+		/**
+		* This is the "constructor" of sorts. 
+		* Since this tool allocates all of the memory upfront, and never reconstructs the local ribs, this method should be used anytime the entire announcement is set
+		*/
+		void fill(const ASN_ID& received_from_id, const ASN& received_from_asn, const Priority& priority, AnnouncementStaticData* static_data);
+
+		/**
+		 * Resets the announcement data to an initial state. Nothing is deallocated (including the static_data pointer)
+		*/
+		void reset();
 	};
 
 	/**
@@ -141,6 +153,7 @@ namespace BGPExtrapolator {
 	struct ASProcessInfo {
 		// Contiguous index of ASes for vector lookups
 		ASN_ID asn_id;
+		ASN asn;
 
 		//Precomputed random boolean for tiebraking. This randomization is determined by the ASN to be deterministic. See tiny_hash for implementation details
 		bool rand_tiebrake_value;
@@ -170,6 +183,9 @@ namespace BGPExtrapolator {
 	*/
 	class Graph {
 	public:
+		//TODO: these vectors could be replaced with a different structure. Something fixed in size, but whose size is determined at runtime (so an array won't work here).
+		// This is guarentee that pointers will remain valid and that no memory is allocated/de-allocated during runtime (it should only do this at initilization and when the program terminates)
+
 		//Takes the ASN and gets the corresponding ASN_ID. An ASN_ID is the index of the process info for that AS
 		//PERF_TODO: could a linear vector lookup be faster?
 		std::unordered_map<ASN, ASN_ID> asn_to_asn_id;
@@ -185,28 +201,36 @@ namespace BGPExtrapolator {
 
 		std::vector<AnnouncementStaticData> announcement_static_data;
 
-		rapidcsv::Document announcements_csv;
-
 		/**
 		 * Creates the extrapolator handle from a CSV of relationship information. The connections made will obey multi-home behavior and will be organized into ranks.
 		 * The given data should not contain strongly connected components (see Tarjan Algorithm).
+		 * 
+		 * Local ribs and static information are allocated here, and only here, and never change thereafter. This is so the process never has to deal with dynamic memory reallocations after initialization.
 		 *
 		 * @param file_path_relationships -> Filepath to CSV file containing relationship data
-		 * @param fuke_path_announcements -> Filepath to CSV file containing announcements separated into blocks that will be seeded into the graph
+		 * @param maximum_prefix_block_id -> maximum number of unique prefixes that will ever be seen in the dataset. Used to allocated local ribs once
+		 * @param maximum_number_seeded_announcements -> maximum number of announcements that could possibly be seeded. Essentially, the maximum amount of rows in the announcements CSV. Used to allocate static information
 		*/
-		Graph(const std::string& file_path_relationships, const std::string &file_path_announcements);
+		Graph(const std::string& file_path_relationships, size_t maximum_prefix_block_id, size_t maximum_number_seeded_announcements);
 
 		/**
 		 * Resets the announcements in the graph. All relationships are preserved and no memory is deallocated.
 		 * - Priorities are reset to the initial state to signify invalid announcements (all fields set to 0).
 		 * - Pointer to the static data is set to nullptr
-		 *
-		 * **All other fields of the announcements are left untouched**
 		 */
-		void reset_announcements();
+		void reset_all_announcements();
 
 		/**
-		* Seeds announcements into the graph for a given block. Data is retrieved from announcements file given in the constructor.
+		 * Resets the all of the **non-seeded** announcements in the graph. All relationships are preserved and no memory is deallocated.
+		 * - Priorities are reset to the initial state to signify invalid announcements (all fields set to 0).
+		 * - Pointer to the static data is set to nullptr
+		 * 
+		 * This could be used when doing multiple propagation techniques with the same starting seeded conditions. Thus, re-seeding the data would not be neccessary.
+		 */
+		void reset_all_non_seeded_announcements();
+
+		/**
+		* Seeds announcements into the graph for a given dataset, which has a maximum possible number of rows as specified in the constructor
 		*
 		* If origin_only is set to true, then the announcement will only be seeded at the origin.
 		*
@@ -214,14 +238,30 @@ namespace BGPExtrapolator {
 		* This does not mean that a seeded announcement will always be accepted by a neighbor, since the seeded-ness of an announcement is not relevant to the propagation TO the neighbor.
 		* Rather, seeded-ness means that this announcement will never be replaced with another announcement for the given prefix during propagation
 		* 
-		* During this stage, it may be possible to encounter several announcements for a prefix, in which case a tie_braking is performed on the timestamp (a bigger/newer timestamp is prefered).
-		* If timestamps are equal, then it could be determined by randomization (hash of the ASN) when random_tiebraking is true or the first announcement that arrived is kept when random_tiebraking is false
-		*
-		* @param block -> Which block of the data to seed into the graph (a csv file may contiain several blocks of announcements, we want to handle them one at a time)
+		* During this stage, it may be possible to encounter several announcements for a prefix, in which case a tiebraking is performed on the timestamp.
+		* How this works is dependent on the configuration of seeding. 
+		* 
+		* - First, timestamps are compared. Depending on the configuration options, older or newer timestamps may be preffered. 
+		* 
+		* - Next, the path lengths and relationships are compared (priority). Higher priority wins.
+		* 
+		* If timestamps are equal, there are then two options: Lowest ASN or Random decision.
+		* 
+		* - Lowest ASN compares the recieved_from_asn of the the current announcement with the ASN of the sender of the incoming announcement. If the current announcement was recieved from a lower ASN than the sender's ASN, then the incoming announcement is rejected.
+		* If the sender has a lower ASN, then the announcement is accepted. This methodology is loosely based on the idea that routers will route to routers with a lower ID. If the current announcement is at its origin, then the ASN of the origin AS is compared to the sender ASN.
+		* 
+		* Cisco Best Path Selection Algorithm: https://www.cisco.com/c/en/us/support/docs/ip/border-gateway-protocol-bgp/13753-25.html
+		* 
+		* - A random decision will brake the tie on a seeded 50/50 chance. Used to measure a baseline of how much more accurate the tool is to randomness. 
+		* 
+		* See the UML document for a visual representation of this decision process
+		* 
+		* @param file_path_announcements -> file path to the CSV containing all of the announcements
 		* @param origin_only -> Only seed the announcement at the origin of the path
-		* @param random_tiebraking -> How to handle timestamp timebraking. Deterministic randomization based on the ASN (true) or keep the first announcement that was accepted (false)
+		* @param prefer_new_timestamp -> Whether a new timestamp (larger) is preffered over older (smaller) timestamp
+		* @param random_tiebraking -> How to handle tiebrakes. Uniform Random tiebraking (true) or lowest ASN (false)
 		*/
-		void seed_block_from_csv(size_t block, bool origin_only, bool random_tiebraking);
+		void seed_block_from_csv(std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking);
 
 		/**
 		 * For a specific path, seed the announcement along the path. See notes on "seed_block_from_csv" function for notes on how this works.
@@ -231,9 +271,10 @@ namespace BGPExtrapolator {
 		 * @param prefix -> Prefix that the announcement is for
 		 * @param timestamp -> Timestamp of the announcement
 		 * @param origin_only -> Whether to only seed the announcement at the origin
+		 * @param prefer_new_timestamp -> Whether a new timestamp (larger) is preffered over older (smaller) timestamp
 		 * @param random_tiebraking -> How to handle timestamp timebraking. Deterministic randomization based on the ASN (true) or keep the first announcement that was accepted (false)
 		*/
-		void seed_path(std::vector<ASN>& as_path, AnnouncementStaticData *static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool random_tiebraking);
+		void seed_path(std::vector<ASN>& as_path, AnnouncementStaticData *static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking);
 
 		/**
 		 * Allow the seeded announcements to propagate throughout the graph, obeying Gao Rexford rules. 
@@ -254,8 +295,16 @@ namespace BGPExtrapolator {
 		 *  - Provider routes: no
 		 *  - Peer routes: no
 		 *  - Customer routes: yes
+		 * 
+		 * The main difference in seeding vs. propagation is that timestamp comparisons are first during seeding. During propagation, timestamp is a tiebraker.
+		 * 
+		 * If the timestamps are also equal, then the decision falls onto either a random decision or the lowest ASN. Timestamp comparison is also optional.
+		 * 
+		 * @param timestamp_tiebrake -> Whether to compare timestamps of the announcements
+		 * @param prefer_new_timestamp -> If we are comparing timestamps, this states whether to prefer a new timestamp (larger) is over an older (smaller) timestamp
+		 * @param random_tiebraking -> If timestamps were equal, or not compared at all, then either make a random decision (true) or prefer the lower ASN (false)
 		*/
-		void propagate();
+		void propagate(bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking);
 
 		/**
 		 * Generates CSV file of the loc_ribs. 
@@ -343,17 +392,13 @@ namespace BGPExtrapolator {
 	/*
 	* PERF_TODO: 
 	* 
-	* It may be easier to instead of just having the priority as a local varaible in these functions to actually construct a single temporary announcement that is copied into the local rib
-	* This temporary announcemnt would be a local variable above the for-loop scope, since much of the information would be the same. May not actually be any better, but worth looking into
-	* 
-	* PERF_TODO:
-	* 
-	* Currently, with the >= on the priority comparison, two announcements with a priority of 0 will cause a copy into the local rib, when the announcement is completely useless
+	* The timestamp could go into the priority. This timestamp could be compressed to 32 bits by choosing the minimum timestamp in the data and making all other timestamps the difference from that. 
+	* With 32 (unsigned int) bits the range is just over 60 years, well over even the existence of BGP itself.
 	*/
 
-	extern void as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers);
-	extern void as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers);
-	extern void as_process_provider_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& providers);
+	extern void as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking);
+	extern void as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking);
+	extern void as_process_provider_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& providers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking);
 
 	/**
 	 * The goal of this function is to perform the comparison of priorities and if the other priotirty is better, then the announcement is accepted and copied in the local rib of the reciever at the given prefix_block_id.
@@ -363,23 +408,11 @@ namespace BGPExtrapolator {
 	 * Rather, the guiding principle is to only copy an announcement when it is neccessary
 	 * 
 	 * @param reciever -> AS recieving the announcement. If accepted, the announcement will be placed into the local rib of this AS at the specified prefix_block_id index
+	 * @param sender -> AS that is sending the announcement. Used to compare ASNs
 	 * @param recieved_from_id -> The ASN_ID of the AS sending this announcement. Used for traceback in the results stage
 	 * @param prefix_block_id -> index in the local ribs of the announcements in question
 	 * @param other_announcement -> Constant refrence to the announcement in the sender's local rib
 	 * @param temp_priority -> Priority containing the relationship and path length information if the announcement were to be accepted into the reciever's local rib
 	*/
-	extern inline void as_process_announcement(ASProcessInfo& reciever, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority);
-
-	/**
-	 * PERF_TODO: It may be worthwhile to split this into two functions, that way a higher scope may be able to decide which tiebraking method to use in order to avoid the branch this function causes.
-	 *		This could be important because a branch predictor may not pick up on this because the boolean is meant to be randomized
-	 * 
-	 * Much like the non-tiebrake version of this function (all other parameters serve the same purpose), except this adds further functionality in the case of a tiebrake (equal priority).
-	 * 
-	 * If tiebrake_keep_original_ann is true, then the announcement already in the local rib will be kept without question (on a priority tiebrake)
-	 * If it is false, then a tiebrake of priorities will result in accepting the new announcement
-	 * 
-	 * @param tiebrake_keep_original_ann -> Whether or not to determine a tiebrake by keeping the first announcement
-	*/
-	extern inline void as_process_announcement_random_tiebrake(ASProcessInfo& reciever, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority, bool tiebrake_keep_original_ann);
+	extern inline void as_process_announcement(ASProcessInfo& reciever, const ASProcessInfo& sender, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking);
 }

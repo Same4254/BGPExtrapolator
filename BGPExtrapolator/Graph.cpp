@@ -1,10 +1,7 @@
 #include "BGPExtrapolator.h"
 
 namespace BGPExtrapolator {
-
-	Graph::Graph(const std::string& file_path_relationships, const std::string& file_path_announcements) 
-		: announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER)) 
-	{
+	Graph::Graph(const std::string& file_path_relationships, size_t maximum_prefix_block_id, size_t maximum_number_seeded_announcements) {
 		rapidcsv::Document relationships_csv(file_path_relationships, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
 		//***** Relationship Parsing *****//
@@ -52,8 +49,9 @@ namespace BGPExtrapolator {
 		// Also put the pointer to other AS data in relationship structures 
 		as_process_info_by_rank.resize(maximum_rank + 1);
 		for (int i = 0; i < as_id_to_relationship_info.size(); i++) {
+			as_process_info[i].asn = as_id_to_relationship_info[i].asn;
 			as_process_info[i].asn_id = as_id_to_relationship_info[i].asn_id;
-			as_process_info[i].rand_tiebrake_value = galois_hash(as_id_to_relationship_info[i].asn) % 2 == 0;
+			as_process_info[i].rand_tiebrake_value = galois_hash(as_process_info[i].asn) % 2 == 0;
 
 			as_process_info_by_rank[as_id_to_relationship_info[i].rank].push_back(&as_process_info[i]);
 
@@ -68,57 +66,34 @@ namespace BGPExtrapolator {
 		}
 
 		//***** Local RIB allocation *****//
-
-		// Maps each block to the number of announcements in that block. 
-		// Used to allocate the size of the static announcement data (which is the maximum number of announcements used in any block)
-		std::map<int, int> block_to_num_announcements;
-
-		size_t maximum_prefix_block_id = 0;
-		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
-			size_t prefix_block_id = announcements_csv.GetCell<size_t>("prefix_block_id", row_index);
-			int block_id = announcements_csv.GetCell<int>("block_id", row_index);
-
-			if (prefix_block_id > maximum_prefix_block_id)
-				maximum_prefix_block_id = prefix_block_id;
-
-			auto search = block_to_num_announcements.find(block_id);
-			if (search == block_to_num_announcements.end())
-				block_to_num_announcements.insert(std::make_pair(block_id, 1));
-			else
-				search->second++;
-		}
-
 		for (auto& process_info : as_process_info)
 			process_info.loc_rib.resize(maximum_prefix_block_id);
 
-		//Allocate space for all of the static information. Don't resize again so that the pointers to the data do not change
-		int maximum_announcement_count = 0;
-		for (auto it = block_to_num_announcements.begin(); it != block_to_num_announcements.end(); it++) {
-			if (it->second > maximum_announcement_count)
-				maximum_announcement_count = it->second;
-		}
+		announcement_static_data.resize(maximum_number_seeded_announcements);
 
-		announcement_static_data.resize(maximum_announcement_count);
-
-		reset_announcements();
+		reset_all_announcements();
 	}
 
-	void Graph::reset_announcements() {
+	void Graph::reset_all_announcements() {
 		for (auto& info : as_process_info) {
 		for (auto& dynamic_ann : info.loc_rib) {
-			dynamic_ann.priority.allFields = 0;
-			dynamic_ann.static_data = nullptr;
+			dynamic_ann.reset();
 		}}
 	}
 
-	void Graph::seed_block_from_csv(size_t block, bool origin_only, bool random_tiebraking) {
-		size_t static_data_index = 0;
+	void Graph::reset_all_non_seeded_announcements() {
+		for (auto& info : as_process_info) {
+		for (auto& dynamic_ann : info.loc_rib) {
+			if(dynamic_ann.priority.seeded == 0)
+				dynamic_ann.reset();
+		}}
+	}
+
+	void Graph::seed_block_from_csv(std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
+		rapidcsv::Document announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
 		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
 			//***** PARSING
-			if (announcements_csv.GetCell<int64_t>("block_id", row_index) != block)
-				continue;
-
 			std::string prefix_string = announcements_csv.GetCell<std::string>("prefix", row_index);
 			std::string as_path_string = announcements_csv.GetCell<std::string>("as_path", row_index);
 
@@ -134,12 +109,11 @@ namespace BGPExtrapolator {
 			prefix.global_id = prefix_id;
 			prefix.block_id = prefix_block_id;
 
-			seed_path(as_path, &announcement_static_data[static_data_index], prefix, timestamp, origin_only, random_tiebraking);
-			static_data_index++;
+			seed_path(as_path, &announcement_static_data[row_index], prefix, timestamp, origin_only, prefer_new_timestamp, random_tiebraking);
 		}
 	}
 
-	void Graph::seed_path(std::vector<ASN>& as_path, AnnouncementStaticData* static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool random_tiebraking) {
+	void Graph::seed_path(std::vector<ASN>& as_path, AnnouncementStaticData* static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
 		if (as_path.size() == 0)
 			return;
 
@@ -163,13 +137,18 @@ namespace BGPExtrapolator {
 			ASProcessInfo& recieving_as = as_process_info[asn_id];
 
 			uint8_t relationship = RELATIONSHIP_PRIORITY_ORIGIN;
-			if (i != as_path.size() - 1) {
+			if (i < as_path.size() - 1) {
 				if (as_id_to_relationship_info[asn_id].providers.find(as_path[i + 1]) == as_id_to_relationship_info[asn_id].providers.end()) {
 					relationship = RELATIONSHIP_PRIORITY_PROVIDER;
 				} else if (as_id_to_relationship_info[asn_id].peers.find(as_path[i + 1]) == as_id_to_relationship_info[asn_id].peers.end()) {
 					relationship = RELATIONSHIP_PRIORITY_PEER;
 				} else if (as_id_to_relationship_info[asn_id].customers.find(as_path[i + 1]) == as_id_to_relationship_info[asn_id].customers.end()) {
 					relationship = RELATIONSHIP_PRIORITY_CUSTOMER;
+				} else {
+					//TODO check for stub: https://github.com/c-morris/BGPExtrapolator/commit/364abb3d70d8e6aa752450e756348b2e1f82c739
+
+					//broken relationship
+					continue;
 				}
 			}
 
@@ -183,50 +162,58 @@ namespace BGPExtrapolator {
 			if (i < as_path.size() - 1)
 				recieved_from_id = asn_to_asn_id.at(as_path[i + 1]);
 
-			AnnouncementDynamicData new_announcement;
-			new_announcement.static_data = &announcement_static_data[prefix.block_id];
-
 			//If there exists an announcement for this prefix already
 			if (recieving_as.loc_rib[prefix.block_id].priority.allFields != 0) {
 				AnnouncementDynamicData& current_announcement = recieving_as.loc_rib[prefix.block_id];
-				if (timestamp > current_announcement.static_data->timestamp) {
-					continue;
-				} else if (timestamp == current_announcement.static_data->timestamp) {
-					//TODO: perhaps find a better way than to branch here.
-					if (random_tiebraking)
-						as_process_announcement_random_tiebrake(recieving_as, recieved_from_id, prefix.block_id, new_announcement, priority, recieving_as.rand_tiebrake_value);
-					else
-						as_process_announcement(recieving_as, recieved_from_id, prefix.block_id, new_announcement, priority);
+				if (prefer_new_timestamp) {
+					if (timestamp > current_announcement.static_data->timestamp)
+						continue;
 				} else {
-					new_announcement.received_from_id = recieved_from_id;
-					new_announcement.priority = priority;
-
-					recieving_as.loc_rib[prefix.block_id] = new_announcement;
+					if (timestamp < current_announcement.static_data->timestamp)
+						continue;
 				}
-			} else {
-				//TODO We don't need this additional check here. We know that there is no announcement in the loc_rib, we can just copy the data into the announcement
-				as_process_announcement(recieving_as, recieved_from_id, prefix.block_id, new_announcement, priority);
+
+				if (timestamp == current_announcement.static_data->timestamp) {
+					if (recieving_as.loc_rib[prefix.block_id].priority.allFields > priority.allFields)
+						continue;
+
+					if (recieving_as.loc_rib[prefix.block_id].priority.allFields == priority.allFields) {
+						if (random_tiebraking) {
+							if (rand() % 2 == 0)
+								continue;
+						} else {//lowest recieved_from ASN wins
+							if (current_announcement.received_from_asn < as_path[i + 1])
+								continue;
+						}
+					}
+				}
 			}
+
+			//Recieve from itself if it is the origin
+			ASN recieved_from_asn = i < as_path.size() - 1 ? as_path[i + 1] : recieving_as.asn;
+
+			//accept the announcement
+			recieving_as.loc_rib[prefix.block_id].fill(recieved_from_id, recieved_from_asn, priority, static_data);
 		}
 	}
 
-	void Graph::propagate() {
+	void Graph::propagate(bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
 		// ************ Propagate Up ************//
 
 		// start at the second rank because the first has no customers
 		for (size_t i = 1; i < as_process_info_by_rank.size(); i++)
 			for (auto& provider : as_process_info_by_rank[i])
-				as_process_customer_announcements(*provider, as_id_to_customers[provider->asn_id]);
+				as_process_customer_announcements(*provider, as_id_to_customers[provider->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
 
 		for (size_t i = 0; i < as_process_info_by_rank.size(); i++)
 			for (auto& as : as_process_info_by_rank[i])
-				as_process_peer_announcements(*as, as_id_to_peers[as->asn_id]);
+				as_process_peer_announcements(*as, as_id_to_peers[as->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
 
 		// ************ Propagate Down ************//
 		//Customer looks up to the provider and looks at its data, that is why the - 2 is there
 		for (int i = as_process_info_by_rank.size() - 2; i >= 0; i--)
 			for (auto& customer : as_process_info_by_rank[i])
-				as_process_peer_announcements(*customer, as_id_to_peers[customer->asn_id]);
+				as_process_peer_announcements(*customer, as_id_to_peers[customer->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
 	}
 
 	void Graph::generate_results_csv(const std::string& results_file_path) {

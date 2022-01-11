@@ -2,6 +2,12 @@
 
 A High-Performance, Cross-Compatable tool to simulate the BGP network, under Gao Rexford constraints, using real world CAIDA relationships and MRT RIB dumps. The goal of this tool is to accurately seed and propagate announcements throughout the BGP network to predict the local RIB of ASes in the network.
 
+## Extrapolator Logic
+
+The following is a UML diagram of how the extrapolator Seeds and Propagates announcements, along with how tiebrakes are handled. Forks in the path indicate configuration options for different methods of tiebraking.
+
+![](/ExtrapolatorVerificationLogic.png)
+
 ## How To Build
 
 This project requires CMake 3.11 or later. If on Ubuntu 18 or older, using pip (rather than apt) to install CMake will download the latest version. For Windows, the Visual Studio CMake toolset will suffice.

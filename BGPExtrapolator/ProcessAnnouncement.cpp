@@ -18,7 +18,7 @@ namespace BGPExtrapolator {
 	void as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
 		Priority customer_priority;
 		customer_priority.allFields = 0;
-		customer_priority.relationship = RELATIONSHIP_PRIORITY_CUSTOMER;
+		customer_priority.relationship = RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER;
 
 		for (ASProcessInfo* customer : customers) {
 			for (int i = 0; i < reciever.loc_rib.size(); i++) {
@@ -35,7 +35,7 @@ namespace BGPExtrapolator {
 	void as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
 		Priority peer_priority;
 		peer_priority.allFields = 0;
-		peer_priority.relationship = RELATIONSHIP_PRIORITY_PEER;
+		peer_priority.relationship = RELATIONSHIP_PRIORITY_PEER_TO_PEER;
 
 		for (ASProcessInfo* peer : peers) {
 			for (int i = 0; i < reciever.loc_rib.size(); i++) {
@@ -52,6 +52,7 @@ namespace BGPExtrapolator {
 	void as_process_provider_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& providers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
 		Priority provider_priority;
 		provider_priority.allFields = 0;
+		provider_priority.relationship = RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER;
 
 		for (ASProcessInfo* provider : providers) {
 			for (int i = 0; i < reciever.loc_rib.size(); i++) {
@@ -59,7 +60,7 @@ namespace BGPExtrapolator {
 					continue;
 
 				provider_priority.pathLength = provider->loc_rib[i].priority.pathLength - 1;
-				provider_priority.relationship = provider->loc_rib[i].priority.relationship;
+				
 
 				as_process_announcement(reciever, *provider, provider->asn_id, i, provider->loc_rib[i], provider_priority, timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
 			}

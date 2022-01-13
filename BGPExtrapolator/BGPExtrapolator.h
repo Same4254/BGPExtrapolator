@@ -6,6 +6,7 @@
 #include <set>
 #include <map>
 #include <string>
+#include <fstream>
 
 #include <rapidcsv.h>
 
@@ -43,9 +44,9 @@ Key changes:
 #define ASN_ID uint32_t
 
 #define RELATIONSHIP_PRIORITY_ORIGIN 3
-#define RELATIONSHIP_PRIORITY_CUSTOMER 2
-#define RELATIONSHIP_PRIORITY_PEER 1
-#define RELATIONSHIP_PRIORITY_PROVIDER 0
+#define RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER 2
+#define RELATIONSHIP_PRIORITY_PEER_TO_PEER 1
+#define RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER 0
 #define RELATIONSHIP_PRIORITY_BROKEN 0
 
 //This is the value that a path length of 0 will have (see comments on the Priority struct)
@@ -306,7 +307,20 @@ namespace BGPExtrapolator {
 		 * 
 		 * @param results_file_path -> File path for the file to write to. If it does not exist, it will be created. If it does exist, data will be deleted, tread carefully.
 		*/
-		void generate_results_csv(const std::string &results_file_path);
+		void generate_results_csv(const std::string &results_file_path, const std::vector<ASN>& local_ribs_to_dump);
+
+		/**
+		 * Given an AS and a prefix, this will trace the path back to the origin and generate the AS_PATH. 
+		 * 
+		 * The origin will be at the end of the list (index = size - 1), starting AS (the given parameter) will be at index 0.
+		 * 
+		 * PERF_TODO: Would it be faster to simply generate and append to the string, rather than creating this list first?
+		 * 
+		 * @param process_info -> AS at the end of the AS_PATH
+		 * @param prefix_block_id -> prefix to trace
+		 * @return AS_PATH starting at the origin (end index) and ending at the given AS (index 0)
+		*/
+		std::vector<ASN> traceback(ASProcessInfo *process_info, uint32_t prefix_block_id);
 	};
 
 	/***************************** PROPAGATION ******************************/

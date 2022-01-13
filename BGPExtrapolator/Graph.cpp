@@ -140,11 +140,11 @@ namespace BGPExtrapolator {
 			if (i < as_path.size() - 1) {
 				//PERF_TODO: can we do better than this?
 				if (as_id_to_relationship_info[asn_id].providers.find(as_path[i + 1]) != as_id_to_relationship_info[asn_id].providers.end()) {
-					relationship = RELATIONSHIP_PRIORITY_PROVIDER;
+					relationship = RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER;
 				} else if (as_id_to_relationship_info[asn_id].peers.find(as_path[i + 1]) != as_id_to_relationship_info[asn_id].peers.end()) {
-					relationship = RELATIONSHIP_PRIORITY_PEER;
+					relationship = RELATIONSHIP_PRIORITY_PEER_TO_PEER;
 				} else if (as_id_to_relationship_info[asn_id].customers.find(as_path[i + 1]) != as_id_to_relationship_info[asn_id].customers.end()) {
-					relationship = RELATIONSHIP_PRIORITY_CUSTOMER;
+					relationship = RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER;
 				} else {
 					//TODO check for stub: https://github.com/c-morris/BGPExtrapolator/commit/364abb3d70d8e6aa752450e756348b2e1f82c739
 					relationship = RELATIONSHIP_PRIORITY_BROKEN;
@@ -212,10 +212,98 @@ namespace BGPExtrapolator {
 		//Customer looks up to the provider and looks at its data, that is why the - 2 is there
 		for (int i = as_process_info_by_rank.size() - 2; i >= 0; i--)
 			for (auto& customer : as_process_info_by_rank[i])
-				as_process_peer_announcements(*customer, as_id_to_peers[customer->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
+				as_process_provider_announcements(*customer, as_id_to_peers[customer->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
 	}
 
-	void Graph::generate_results_csv(const std::string& results_file_path) {
+	//PERF_TODO: this might be bad depending on how rapid_csv handles things
+	void Graph::generate_results_csv(const std::string& results_file_path, const std::vector<ASN> &local_ribs_to_dump) {
+		//Create the file, delete if it exists already (std::fstream::trunc)
+		std::fstream fStream(results_file_path, std::fstream::in | std::fstream::out | std::fstream::trunc);
+		rapidcsv::Document document(fStream, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
+		//Wow, rapidcsv kinda not doing so hot here...
+		document.InsertColumn<std::string>(document.GetColumnCount(), std::vector<std::string>(), "prefix");
+		document.InsertColumn<std::string>(document.GetColumnCount(), std::vector<std::string>(), "as_path");
+		document.InsertColumn<std::int64_t>(document.GetColumnCount(), std::vector<int64_t>(), "timestamp");
+		document.InsertColumn<std::ASN>(document.GetColumnCount(), std::vector<ASN>(), "origin");
+		document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_id");
+		document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "block_id");
+		document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_block_id");
+
+		size_t prefix_column_index = document.GetColumnIdx("prefix");
+		size_t as_path_column_index = document.GetColumnIdx("as_path");
+		size_t timestamp_column_index = document.GetColumnIdx("timestamp");
+		size_t origin_column_index = document.GetColumnIdx("origin");
+		size_t prefix_id_column_index = document.GetColumnIdx("prefix_id");
+		size_t block_id_column_index = document.GetColumnIdx("block_id");
+		size_t prefix_block_id_column_index = document.GetColumnIdx("prefix_block_id");
+
+		//Only dump the RIB of ASes we care about.
+		for (ASN asn : local_ribs_to_dump) {
+			auto id_search = asn_to_asn_id.find(asn);
+			if (id_search == asn_to_asn_id.end())
+				continue;
+
+			ASN_ID id = id_search->second;
+			ASProcessInfo& process_info = as_process_info[id];
+
+			for (size_t i = 0; i < process_info.loc_rib.size(); i++) {
+				//Do nothing if there is no actual announcement at the prefix
+				if (process_info.loc_rib[i].priority.allFields == 0)
+					continue;
+
+				std::vector<ASN> as_path = traceback(&process_info, i);
+
+				//***** Build String
+				std::stringstream string_stream;
+
+				string_stream << "{";
+				for (size_t j = 0; j < as_path.size(); j++) {
+					if (j == as_path.size() - 1)
+						string_stream << as_path[j];
+					else
+						string_stream << as_path[j] << ",";
+				}
+
+				string_stream << "}";
+
+				//****** Write to CSV
+				document.InsertRow<int>(document.GetRowCount());
+				size_t row_index = document.GetRowCount();
+
+				document.SetCell<std::string>(prefix_column_index, row_index, process_info.loc_rib[i].static_data->prefix_string);
+				document.SetCell<std::string>(as_path_column_index, row_index, string_stream.str());
+				document.SetCell<int64_t>(timestamp_column_index, row_index, process_info.loc_rib[i].static_data->timestamp);
+				document.SetCell<ASN>(origin_column_index, row_index, process_info.loc_rib[i].static_data->origin);
+				document.SetCell<uint32_t>(prefix_id_column_index, row_index, process_info.loc_rib[i].static_data->prefix.global_id);
+				document.SetCell<uint32_t>(block_id_column_index, row_index, 0);//TODO: get this value from somewhere
+				document.SetCell<uint32_t>(prefix_block_id_column_index, row_index, process_info.loc_rib[i].static_data->prefix.block_id);
+			}
+		}
+
+		document.Save();
+		fStream.close();
+	}
+
+	std::vector<ASN> Graph::traceback(ASProcessInfo *process_info, uint32_t prefix_block_id) {
+		std::vector<ASN> as_path;
+
+		if (prefix_block_id >= process_info->loc_rib.size())
+			return as_path;
+
+		//origin recieves from itself
+		while(process_info->loc_rib[prefix_block_id].received_from_asn != process_info->asn) {
+			//TODO: Shouldn't happen, should result in error
+			if (process_info->loc_rib[prefix_block_id].priority.allFields == 0)
+				return as_path;
+
+			as_path.push_back(process_info->asn);
+			process_info = &as_process_info[process_info->loc_rib[prefix_block_id].received_from_id];
+		}
+
+		//add the origin to the path
+		as_path.push_back(process_info->asn);
+
+		return as_path;
 	}
 }

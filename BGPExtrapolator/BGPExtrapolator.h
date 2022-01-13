@@ -34,11 +34,7 @@ Key changes:
 	Overall minimize (unpredictable) branching. We want this thing to be a straight forward process as much as possible
 */
 
-#ifdef IPv6
-#define IPType __int128
-#else
-#define IPType uint32_t
-#endif
+//TODO: should these be const varaibles and typedefs? *Technically* a little more type-safe
 
 //Yes, the ASN and ASN_ID are the same type. However, I want to distinguish when either is being used because they are very different in principle
 #define ASN uint32_t
@@ -50,11 +46,10 @@ Key changes:
 #define RELATIONSHIP_PRIORITY_CUSTOMER 2
 #define RELATIONSHIP_PRIORITY_PEER 1
 #define RELATIONSHIP_PRIORITY_PROVIDER 0
+#define RELATIONSHIP_PRIORITY_BROKEN 0
 
 //This is the value that a path length of 0 will have (see comments on the Priority struct)
 #define MIN_PATH_LENGTH 0xff
-
-#define GALOIS_HASH_KEY 3
 
 // Delimeter in the input CSV files
 #define SEPARATED_VALUES_DELIMETER '\t'
@@ -92,11 +87,6 @@ namespace BGPExtrapolator {
 	};
 
 	/**
-	 * Address and Netmask: this is the actual network information. 
-	 *	These values are the decimal conversion of their original form. 
-	 *  For example an address of 192.168.1.1 is converted into bits such that the binary representation of 192 is the most significant bits
-	 *	The netmask from the dataset states how many 1 bits there are. So the netmask representation here is an integer with that many bits set to 1, start from the least significant bits
-	 * 
 	 * Gloabl_Id and Block_Id
 	 *  Every prefix is given a continuous index (global_id). The IDs start at 0 and increment up.
 	 *	The setup of the dataset is to separate the data into blocks (such that we do not fill up RAM during propagation).
@@ -106,7 +96,6 @@ namespace BGPExtrapolator {
 	 *	This is apposed to some kind of hash map or RB tree (announcement lookup in the local rib is in the hottest path in the propagation stage)
 	*/
 	struct Prefix {
-		IPType address, netmask;
 		uint32_t global_id, block_id;
 	};
 
@@ -120,6 +109,8 @@ namespace BGPExtrapolator {
 		ASN_ID origin;
 		Prefix prefix;
 		int64_t timestamp;
+
+		std::string prefix_string;
 	};
 
 	/**
@@ -155,9 +146,6 @@ namespace BGPExtrapolator {
 		ASN_ID asn_id;
 		ASN asn;
 
-		//Precomputed random boolean for tiebraking. This randomization is determined by the ASN to be deterministic. See tiny_hash for implementation details
-		bool rand_tiebrake_value;
-
 		//All of the locally accepted announcements. Indexed by the prefix block_id. 
 		//Note, that this is pre-allocated to fit all prefixes. There may be unused bytes (represented by a priority of 0)
 		std::vector<AnnouncementDynamicData> loc_rib;
@@ -188,6 +176,8 @@ namespace BGPExtrapolator {
 
 		//Takes the ASN and gets the corresponding ASN_ID. An ASN_ID is the index of the process info for that AS
 		//PERF_TODO: could a linear vector lookup be faster?
+
+		//PERF_TODO: is ASN_ID neccessary? Would it be more plausible to have a biiig vector where the index is the ASN itself? This would remove mapping from ASN to ASN_ID
 		std::unordered_map<ASN, ASN_ID> asn_to_asn_id;
 		std::vector<ASRelationshipInfo> as_id_to_relationship_info;
 
@@ -269,12 +259,13 @@ namespace BGPExtrapolator {
 		 * @param as_path -> The path to seed
 		 * @param static_data -> Location of the static data structure to store constant information about the announcements. This pointer is given to all announcements that it is seeded with. Make sure this pointer stays valid!
 		 * @param prefix -> Prefix that the announcement is for
+		 * @param prefix_string -> The string representing the prefix from the dataset. Only used to output at then end for results.
 		 * @param timestamp -> Timestamp of the announcement
 		 * @param origin_only -> Whether to only seed the announcement at the origin
 		 * @param prefer_new_timestamp -> Whether a new timestamp (larger) is preffered over older (smaller) timestamp
 		 * @param random_tiebraking -> How to handle timestamp timebraking. Deterministic randomization based on the ASN (true) or keep the first announcement that was accepted (false)
 		*/
-		void seed_path(std::vector<ASN>& as_path, AnnouncementStaticData *static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking);
+		void seed_path(std::vector<ASN>& as_path, AnnouncementStaticData *static_data, Prefix& prefix, const std::string &prefix_string, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking);
 
 		/**
 		 * Allow the seeded announcements to propagate throughout the graph, obeying Gao Rexford rules. 
@@ -352,42 +343,6 @@ namespace BGPExtrapolator {
 	 * @return A vector containing the path, with ordering preserved. Origin is at the end of the vector.
 	*/
 	extern std::vector<ASN> parse_ASN_list(const std::string &as_path_string);
-
-	/**
-	 * Takes the cidr string from the csv and converts it into a Prefix struct. 
-	 * 
-	 * For example an address of 192.168.1.1 is converted into bits such that the binary representation of 192 is the most significant bits and so on...
-	 * The netmask from the dataset states how many 1 bits there are. So the netmask representation here is an integer with that many bits set to 1, start from the least significant bits
-	 * 
-	 * Example string could be: "192.168.1.1/24"
-	 * 
-	 * TODO: IPv6 support
-	 * 
-	 * @param s -> cidr notation of the prefix
-	 * @return -> A Prefix struct with the address and netmask filled in. Block ids are left untouched.
-	*/
-	extern Prefix cidr_string_to_prefix(const std::string &s);
-
-	/**
-	 * Takes the internal representation of a Prefix and converts it back into a cidr string. 
-	 * A round trip starting with a string, converting to the structure, and back to the string should result in the same exact string.
-	 * 
-	 * TODO: IPv6 support
-	 * PERF_TODO: Is it possible to not need this conversion? For plain BGP it is not neccessary, but for ROV knowledge of the netmask will be neccessary
-	 * 
-	 * @param prefix -> The prefix structure to convert into a string
-	 * @return Cidr notation of the prefix
-	*/
-	extern std::string prefix_to_cidr_string(const Prefix& prefix);
-
-	/**
-	 * Small Galois hash used for deterministic randomization on the ASN. Used to determine how the AS will perform tiebrakes.
-	 * A fixed key is used such that the decision is the same for every run, no matter the ordering or the topology.
-	 * 
-	 * @param asn -> ASN of the AS 
-	 * @return The hash of the ASN
-	*/
-	extern uint8_t galois_hash(const ASN &asn);
 
 	/*
 	* PERF_TODO: 

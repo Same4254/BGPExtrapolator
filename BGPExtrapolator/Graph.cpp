@@ -51,7 +51,6 @@ namespace BGPExtrapolator {
 		for (int i = 0; i < as_id_to_relationship_info.size(); i++) {
 			as_process_info[i].asn = as_id_to_relationship_info[i].asn;
 			as_process_info[i].asn_id = as_id_to_relationship_info[i].asn_id;
-			as_process_info[i].rand_tiebrake_value = galois_hash(as_process_info[i].asn) % 2 == 0;
 
 			as_process_info_by_rank[as_id_to_relationship_info[i].rank].push_back(&as_process_info[i]);
 
@@ -97,7 +96,6 @@ namespace BGPExtrapolator {
 			std::string prefix_string = announcements_csv.GetCell<std::string>("prefix", row_index);
 			std::string as_path_string = announcements_csv.GetCell<std::string>("as_path", row_index);
 
-			Prefix prefix = cidr_string_to_prefix(prefix_string);
 			std::vector<ASN> as_path = parse_ASN_list(as_path_string);
 
 			int64_t timestamp = announcements_csv.GetCell<int64_t>("timestamp", row_index);
@@ -106,20 +104,22 @@ namespace BGPExtrapolator {
 			uint32_t prefix_id = announcements_csv.GetCell<uint32_t>("prefix_id", row_index);
 			uint32_t prefix_block_id = announcements_csv.GetCell<uint32_t>("prefix_block_id", row_index);
 
+			Prefix prefix;
 			prefix.global_id = prefix_id;
 			prefix.block_id = prefix_block_id;
 
-			seed_path(as_path, &announcement_static_data[row_index], prefix, timestamp, origin_only, prefer_new_timestamp, random_tiebraking);
+			seed_path(as_path, &announcement_static_data[row_index], prefix, prefix_string, timestamp, origin_only, prefer_new_timestamp, random_tiebraking);
 		}
 	}
 
-	void Graph::seed_path(std::vector<ASN>& as_path, AnnouncementStaticData* static_data, Prefix& prefix, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
+	void Graph::seed_path(std::vector<ASN>& as_path, AnnouncementStaticData* static_data, Prefix& prefix, const std::string& prefix_string, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
 		if (as_path.size() == 0)
 			return;
 
 		static_data->origin = as_path[as_path.size() - 1];
 		static_data->prefix = prefix;
 		static_data->timestamp = timestamp;
+		static_data->prefix_string = prefix_string;
 
 		int end_index = origin_only ? as_path.size() - 1 : 0;
 		for (int i = as_path.size() - 1; i >= end_index; i--) {
@@ -138,17 +138,16 @@ namespace BGPExtrapolator {
 
 			uint8_t relationship = RELATIONSHIP_PRIORITY_ORIGIN;
 			if (i < as_path.size() - 1) {
-				if (as_id_to_relationship_info[asn_id].providers.find(as_path[i + 1]) == as_id_to_relationship_info[asn_id].providers.end()) {
+				//PERF_TODO: can we do better than this?
+				if (as_id_to_relationship_info[asn_id].providers.find(as_path[i + 1]) != as_id_to_relationship_info[asn_id].providers.end()) {
 					relationship = RELATIONSHIP_PRIORITY_PROVIDER;
-				} else if (as_id_to_relationship_info[asn_id].peers.find(as_path[i + 1]) == as_id_to_relationship_info[asn_id].peers.end()) {
+				} else if (as_id_to_relationship_info[asn_id].peers.find(as_path[i + 1]) != as_id_to_relationship_info[asn_id].peers.end()) {
 					relationship = RELATIONSHIP_PRIORITY_PEER;
-				} else if (as_id_to_relationship_info[asn_id].customers.find(as_path[i + 1]) == as_id_to_relationship_info[asn_id].customers.end()) {
+				} else if (as_id_to_relationship_info[asn_id].customers.find(as_path[i + 1]) != as_id_to_relationship_info[asn_id].customers.end()) {
 					relationship = RELATIONSHIP_PRIORITY_CUSTOMER;
 				} else {
 					//TODO check for stub: https://github.com/c-morris/BGPExtrapolator/commit/364abb3d70d8e6aa752450e756348b2e1f82c739
-
-					//broken relationship
-					continue;
+					relationship = RELATIONSHIP_PRIORITY_BROKEN;
 				}
 			}
 

@@ -19,7 +19,7 @@ namespace BGPExtrapolator {
 	std::vector<ASN> parse_ASN_list(const std::string& as_path_string) {
 		std::vector<ASN> as_path;
 
-		if (as_path_string == "{}" || as_path_string == "{ }");
+		if (as_path_string == "{}" || as_path_string == "{ }")
 			return as_path;
 
 		const char* c_as_path_string = as_path_string.c_str();

@@ -88,7 +88,7 @@ namespace BGPExtrapolator {
 		}}
 	}
 
-	void Graph::seed_block_from_csv(std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
+	void Graph::seed_block_from_csv(const std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
 		rapidcsv::Document announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
 		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
@@ -219,7 +219,7 @@ namespace BGPExtrapolator {
 	void Graph::generate_results_csv(const std::string& results_file_path, const std::vector<ASN> &local_ribs_to_dump) {
 		//Create the file, delete if it exists already (std::fstream::trunc)
 		std::fstream fStream(results_file_path, std::fstream::in | std::fstream::out | std::fstream::trunc);
-		rapidcsv::Document document(fStream, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
+		rapidcsv::Document document("", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER, false, false));
 
 		//Wow, rapidcsv kinda not doing so hot here...
 		document.InsertColumn<std::string>(document.GetColumnCount(), std::vector<std::string>(), "prefix");
@@ -268,8 +268,8 @@ namespace BGPExtrapolator {
 				string_stream << "}";
 
 				//****** Write to CSV
-				document.InsertRow<int>(document.GetRowCount());
-				size_t row_index = document.GetRowCount();
+				document.InsertRow<int>(0);
+				size_t row_index = 0;
 
 				document.SetCell<std::string>(prefix_column_index, row_index, process_info.loc_rib[i].static_data->prefix_string);
 				document.SetCell<std::string>(as_path_column_index, row_index, string_stream.str());
@@ -281,7 +281,7 @@ namespace BGPExtrapolator {
 			}
 		}
 
-		document.Save();
+		document.Save(fStream);
 		fStream.close();
 	}
 

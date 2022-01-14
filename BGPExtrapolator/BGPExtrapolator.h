@@ -252,7 +252,7 @@ namespace BGPExtrapolator {
 		* @param prefer_new_timestamp -> Whether a new timestamp (larger) is preffered over older (smaller) timestamp
 		* @param random_tiebraking -> How to handle tiebrakes. Uniform Random tiebraking (true) or lowest ASN (false)
 		*/
-		void seed_block_from_csv(std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking);
+		void seed_block_from_csv(const std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking);
 
 		/**
 		 * For a specific path, seed the announcement along the path. See notes on "seed_block_from_csv" function for notes on how this works.

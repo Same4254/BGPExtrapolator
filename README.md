@@ -12,11 +12,18 @@ The following is a UML diagram of how the extrapolator Seeds and Propagates anno
 
 This project requires CMake 3.11 or later. If on Ubuntu 18 or older, using pip (rather than apt) to install CMake will download the latest version. For Windows, the Visual Studio CMake toolset will suffice.
 
-Once the repository is cloned, use traditional CMake building commands in the top directory of the project
+Once the repository is cloned, use traditional CMake building commands in the top directory of the project.
 
 ```
-cmake .
-make
+./> pip install cmake
+./> git clone 
+./> git clone https://github.com/Same4254/BGPExtrapolator.git
+./> cd BGPExtrapolator
+./BGPExtrapolator/> mkdir build
+./BGPExtrapolator/> cd build/
+./BGPExtrapolator/build/> cmake .
+./BGPExtrapolator/build/> make
+./BGPExtrapolator/build/> ./BGPExtrapolator/BGPExtrapolator <any command line arguments here> 
 ```
 
-The first build of the project will be longer than subsequent builds because it will download dependencies. 
+The first build of the project will be longer than subsequent builds because it will download dependencies and build them as well.

@@ -88,7 +88,7 @@ namespace BGPExtrapolator {
 		}}
 	}
 
-	void Graph::seed_block_from_csv(const std::string& file_path_announcements, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
+	void Graph::seed_block_from_csv(const std::string& file_path_announcements, const SeedingConfiguration& config) {
 		rapidcsv::Document announcements_csv(file_path_announcements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
 		for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
@@ -108,11 +108,11 @@ namespace BGPExtrapolator {
 			prefix.global_id = prefix_id;
 			prefix.block_id = prefix_block_id;
 
-			seed_path(as_path, &announcement_static_data[row_index], prefix, prefix_string, timestamp, origin_only, prefer_new_timestamp, random_tiebraking);
+			seed_path(as_path, &announcement_static_data[row_index], prefix, prefix_string, timestamp, config);
 		}
 	}
 
-	void Graph::seed_path(std::vector<ASN>& as_path, AnnouncementStaticData* static_data, Prefix& prefix, const std::string& prefix_string, int64_t timestamp, bool origin_only, bool prefer_new_timestamp, bool random_tiebraking) {
+	void Graph::seed_path(const std::vector<ASN>& as_path, AnnouncementStaticData* static_data, const Prefix& prefix, const std::string& prefix_string, int64_t timestamp, const SeedingConfiguration &config) {
 		if (as_path.size() == 0)
 			return;
 
@@ -121,7 +121,7 @@ namespace BGPExtrapolator {
 		static_data->timestamp = timestamp;
 		static_data->prefix_string = prefix_string;
 
-		int end_index = origin_only ? as_path.size() - 1 : 0;
+		int end_index = config.origin_only ? as_path.size() - 1 : 0;
 		for (int i = as_path.size() - 1; i >= end_index; i--) {
 			// If AS not in the graph, skip it
 			// TODO: This should be an error
@@ -153,7 +153,7 @@ namespace BGPExtrapolator {
 
 			Priority priority;
 			priority.allFields = 0;
-			priority.pathLength = MIN_PATH_LENGTH - (i - (as_path.size() - 1));//This should be fine because there *should* be no path longer than 254 in length
+			priority.pathLength = MIN_PATH_LENGTH - ((as_path.size() - 1) - i);//This should be fine because there *should* be no path longer than 254 in length
 			priority.relationship = relationship;
 			priority.seeded = 1;
 
@@ -164,20 +164,18 @@ namespace BGPExtrapolator {
 			//If there exists an announcement for this prefix already
 			if (recieving_as.loc_rib[prefix.block_id].priority.allFields != 0) {
 				AnnouncementDynamicData& current_announcement = recieving_as.loc_rib[prefix.block_id];
-				if (prefer_new_timestamp) {
-					if (timestamp > current_announcement.static_data->timestamp)
-						continue;
-				} else {
-					if (timestamp < current_announcement.static_data->timestamp)
-						continue;
-				}
+
+				if (config.timestamp_comparison == TIMESTAMP_COMPARISON::PREFER_NEWER && timestamp > current_announcement.static_data->timestamp)
+					continue;
+				else if (config.timestamp_comparison == TIMESTAMP_COMPARISON::PREFER_OLDER && timestamp < current_announcement.static_data->timestamp)
+					continue;
 
 				if (timestamp == current_announcement.static_data->timestamp) {
 					if (recieving_as.loc_rib[prefix.block_id].priority.allFields > priority.allFields)
 						continue;
 
 					if (recieving_as.loc_rib[prefix.block_id].priority.allFields == priority.allFields) {
-						if (random_tiebraking) {
+						if (config.tiebraking_method == TIEBRAKING_METHOD::RANDOM) {
 							if (rand() % 2 == 0)
 								continue;
 						} else {//lowest recieved_from ASN wins
@@ -192,27 +190,27 @@ namespace BGPExtrapolator {
 			ASN recieved_from_asn = i < as_path.size() - 1 ? as_path[i + 1] : recieving_as.asn;
 
 			//accept the announcement
-			recieving_as.loc_rib[prefix.block_id].fill(recieved_from_id, recieved_from_asn, priority, static_data);
+			recieving_as.loc_rib[prefix.block_id].fill(recieved_from_asn, priority, static_data);
 		}
 	}
 
-	void Graph::propagate(bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
+	void Graph::propagate(const PropagationConfiguration& config) {
 		// ************ Propagate Up ************//
 
 		// start at the second rank because the first has no customers
 		for (size_t i = 1; i < as_process_info_by_rank.size(); i++)
 			for (auto& provider : as_process_info_by_rank[i])
-				as_process_customer_announcements(*provider, as_id_to_customers[provider->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
+				as_process_customer_announcements(*provider, as_id_to_customers[provider->asn_id], config);
 
 		for (size_t i = 0; i < as_process_info_by_rank.size(); i++)
 			for (auto& as : as_process_info_by_rank[i])
-				as_process_peer_announcements(*as, as_id_to_peers[as->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
+				as_process_peer_announcements(*as, as_id_to_peers[as->asn_id], config);
 
 		// ************ Propagate Down ************//
 		//Customer looks up to the provider and looks at its data, that is why the - 2 is there
 		for (int i = as_process_info_by_rank.size() - 2; i >= 0; i--)
 			for (auto& customer : as_process_info_by_rank[i])
-				as_process_provider_announcements(*customer, as_id_to_peers[customer->asn_id], timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
+				as_process_provider_announcements(*customer, as_id_to_peers[customer->asn_id], config);
 	}
 
 	//PERF_TODO: this might be bad depending on how rapid_csv handles things
@@ -227,16 +225,12 @@ namespace BGPExtrapolator {
 		document.InsertColumn<std::int64_t>(document.GetColumnCount(), std::vector<int64_t>(), "timestamp");
 		document.InsertColumn<std::ASN>(document.GetColumnCount(), std::vector<ASN>(), "origin");
 		document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_id");
-		document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "block_id");
-		document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_block_id");
 
 		size_t prefix_column_index = document.GetColumnIdx("prefix");
 		size_t as_path_column_index = document.GetColumnIdx("as_path");
 		size_t timestamp_column_index = document.GetColumnIdx("timestamp");
 		size_t origin_column_index = document.GetColumnIdx("origin");
 		size_t prefix_id_column_index = document.GetColumnIdx("prefix_id");
-		size_t block_id_column_index = document.GetColumnIdx("block_id");
-		size_t prefix_block_id_column_index = document.GetColumnIdx("prefix_block_id");
 
 		//Only dump the RIB of ASes we care about.
 		for (ASN asn : local_ribs_to_dump) {
@@ -247,7 +241,7 @@ namespace BGPExtrapolator {
 			ASN_ID id = id_search->second;
 			ASProcessInfo& process_info = as_process_info[id];
 
-			for (size_t i = 0; i < process_info.loc_rib.size(); i++) {
+			for (uint32_t i = 0; i < process_info.loc_rib.size(); i++) {
 				//Do nothing if there is no actual announcement at the prefix
 				if (process_info.loc_rib[i].priority.allFields == 0)
 					continue;
@@ -276,8 +270,6 @@ namespace BGPExtrapolator {
 				document.SetCell<int64_t>(timestamp_column_index, row_index, process_info.loc_rib[i].static_data->timestamp);
 				document.SetCell<ASN>(origin_column_index, row_index, process_info.loc_rib[i].static_data->origin);
 				document.SetCell<uint32_t>(prefix_id_column_index, row_index, process_info.loc_rib[i].static_data->prefix.global_id);
-				document.SetCell<uint32_t>(block_id_column_index, row_index, 0);//TODO: get this value from somewhere
-				document.SetCell<uint32_t>(prefix_block_id_column_index, row_index, process_info.loc_rib[i].static_data->prefix.block_id);
 			}
 		}
 
@@ -298,7 +290,10 @@ namespace BGPExtrapolator {
 				return as_path;
 
 			as_path.push_back(process_info->asn);
-			process_info = &as_process_info[process_info->loc_rib[prefix_block_id].received_from_id];
+
+			ASN_ID recieved_from_id = asn_to_asn_id.at(process_info->loc_rib[prefix_block_id].received_from_asn);
+
+			process_info = &as_process_info[recieved_from_id];
 		}
 
 		//add the origin to the path

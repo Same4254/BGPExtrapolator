@@ -15,13 +15,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(rapidcsv)
 
-FetchContent_Declare(
-  boost
-  GIT_REPOSITORY "https://github.com/boostorg/boost.git"
-  GIT_TAG "boost-1.77.0"
-)
+#FetchContent_Declare(
+#  boost
+#  GIT_REPOSITORY "https://github.com/boostorg/boost.git"
+#  GIT_TAG "boost-1.77.0"
+#)
 
-FetchContent_MakeAvailable(boost)
+#FetchContent_MakeAvailable(boost)
+
+#set(BENCHMARK_ENABLE_TESTING NO)
+
+#FetchContent_Declare(
+#    googlebenchmark
+#    GIT_REPOSITORY https://github.com/google/benchmark.git
+#    GIT_TAG origin/master
+#)
+
+#FetchContent_MakeAvailable(googlebenchmark)
 
 # Include sub-projects.
 add_subdirectory ("BGPExtrapolator")

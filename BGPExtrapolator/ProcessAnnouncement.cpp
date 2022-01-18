@@ -1,97 +1,75 @@
 #include "BGPExtrapolator.h"
 
 namespace BGPExtrapolator {
-	void AnnouncementDynamicData::fill(const ASN_ID& received_from_id, const ASN& received_from_asn, const Priority& priority, AnnouncementStaticData* static_data) {
-		this->received_from_id = received_from_id;
+	void AnnouncementDynamicData::fill(const ASN& received_from_asn, const Priority& priority, AnnouncementStaticData* static_data) {
 		this->received_from_asn = received_from_asn;
 		this->priority = priority;
 		this->static_data = static_data;
 	}
 
 	void AnnouncementDynamicData::reset() {
-		this->received_from_id = 0;
 		this->received_from_asn = 0;
 		this->priority.allFields = 0;
 		this->static_data = nullptr;
 	}
 
-	void as_process_customer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& customers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
-		Priority customer_priority;
-		customer_priority.allFields = 0;
-		customer_priority.relationship = RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER;
+	void as_process_customer_announcements(ASProcessInfo& reciever, const std::vector<ASProcessInfo*>& customers, const PropagationConfiguration& config) {
+		as_process_relationship(reciever, customers, RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER, config);
+	}
 
-		for (ASProcessInfo* customer : customers) {
-			for (int i = 0; i < reciever.loc_rib.size(); i++) {
-				if (customer->loc_rib[i].priority.allFields == 0)
+	void as_process_peer_announcements(ASProcessInfo& reciever, const std::vector<ASProcessInfo*>& peers, const PropagationConfiguration& config) {
+		as_process_relationship(reciever, peers, RELATIONSHIP_PRIORITY_PEER_TO_PEER, config);
+	}
+
+	void as_process_provider_announcements(ASProcessInfo& reciever, const std::vector<ASProcessInfo*>& providers, const PropagationConfiguration& config) {
+		as_process_relationship(reciever, providers, RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER, config);
+	}
+
+	void as_process_relationship(ASProcessInfo& reciever, const std::vector<ASProcessInfo*>& neighbors, const uint8_t& relationship_priority, const PropagationConfiguration& config) {
+		Priority temp_priority;
+		temp_priority.allFields = 0;
+		temp_priority.relationship = relationship_priority;
+
+		for (ASProcessInfo* neighbor : neighbors) {
+			for (uint32_t i = 0; i < reciever.loc_rib.size(); i++) {
+				//Skip if the neighbor has nothing for this prefix
+				if (neighbor->loc_rib[i].priority.allFields == 0)
 					continue;
 
-				customer_priority.pathLength = customer->loc_rib[i].priority.pathLength - 1;//See priority struct for why this is subtraction
+				temp_priority.pathLength = neighbor->loc_rib[i].priority.pathLength - 1;
 
-				as_process_announcement(reciever, *customer, customer->asn_id, i, customer->loc_rib[i], customer_priority, timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
+				if(compare_announcements(reciever, *neighbor, i, temp_priority, config))
+					reciever.loc_rib[i].fill(neighbor->asn, temp_priority, neighbor->loc_rib[i].static_data);
 			}
 		}
 	}
 
-	void as_process_peer_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& peers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
-		Priority peer_priority;
-		peer_priority.allFields = 0;
-		peer_priority.relationship = RELATIONSHIP_PRIORITY_PEER_TO_PEER;
+	//TODO: This needs a better approach than all of this branching. Though, this branching is *predictable* since it is the same every time
+	bool compare_announcements(const ASProcessInfo& reciever, const ASProcessInfo& sender, const uint32_t& prefix_block_id, const Priority& temp_priority, const PropagationConfiguration& config) {
+		const AnnouncementDynamicData& current_announcement = reciever.loc_rib[prefix_block_id];
+		const AnnouncementDynamicData& sent_announcement = sender.loc_rib[prefix_block_id];
 
-		for (ASProcessInfo* peer : peers) {
-			for (int i = 0; i < reciever.loc_rib.size(); i++) {
-				if (peer->loc_rib[i].priority.allFields == 0)
-					continue;
+		if (temp_priority.allFields > current_announcement.priority.allFields) {
+			return true;
+		} else if (temp_priority.allFields == current_announcement.priority.allFields) {
+			if (config.timestamp_comparison == TIMESTAMP_COMPARISON::PREFER_NEWER && current_announcement.static_data->timestamp > sent_announcement.static_data->timestamp)
+				return false;
+			else if (config.timestamp_comparison == TIMESTAMP_COMPARISON::PREFER_OLDER && current_announcement.static_data->timestamp < sent_announcement.static_data->timestamp)
+				return false;
 
-				peer_priority.pathLength = peer->loc_rib[i].priority.pathLength - 1;
-
-				as_process_announcement(reciever, *peer, peer->asn_id, i, peer->loc_rib[i], peer_priority, timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
-			}
-		}
-	}
-
-	void as_process_provider_announcements(ASProcessInfo& reciever, std::vector<ASProcessInfo*>& providers, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
-		Priority provider_priority;
-		provider_priority.allFields = 0;
-		provider_priority.relationship = RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER;
-
-		for (ASProcessInfo* provider : providers) {
-			for (int i = 0; i < reciever.loc_rib.size(); i++) {
-				if (provider->loc_rib[i].priority.allFields == 0)
-					continue;
-
-				provider_priority.pathLength = provider->loc_rib[i].priority.pathLength - 1;
-				
-
-				as_process_announcement(reciever, *provider, provider->asn_id, i, provider->loc_rib[i], provider_priority, timestamp_tiebrake, prefer_new_timestamp, random_tiebraking);
-			}
-		}
-	}
-
-	void as_process_announcement(ASProcessInfo& reciever, const ASProcessInfo& sender, const ASN_ID& recieved_from_id, const uint32_t& prefix_block_id, const AnnouncementDynamicData& other_announcement, const Priority& temp_priority, bool timestamp_tiebrake, bool prefer_new_timestamp, bool random_tiebraking) {
-		if (temp_priority.allFields > reciever.loc_rib[prefix_block_id].priority.allFields) {
-			reciever.loc_rib[prefix_block_id].fill(recieved_from_id, sender.asn, temp_priority, other_announcement.static_data);
-		} else if (temp_priority.allFields == reciever.loc_rib[prefix_block_id].priority.allFields) {
-			if (timestamp_tiebrake) {
-				if (prefer_new_timestamp) {
-					if (reciever.loc_rib[prefix_block_id].static_data->timestamp > other_announcement.static_data->timestamp)
-						return;
-				} else {
-					if (reciever.loc_rib[prefix_block_id].static_data->timestamp < other_announcement.static_data->timestamp)
-						return;
-				}
-			}
-
-			if (reciever.loc_rib[prefix_block_id].static_data->timestamp == other_announcement.static_data->timestamp) {
-				if (random_tiebraking) {
+			if (current_announcement.static_data->timestamp == sent_announcement.static_data->timestamp) {
+				if (config.tiebraking_method == TIEBRAKING_METHOD::RANDOM) {
 					if (rand() % 2 == 0)
-						return;
+						return false;
 				} else {//lowest ASN wins
-					if (reciever.loc_rib[prefix_block_id].received_from_asn < sender.asn)
-						return;
+					if (current_announcement.received_from_asn < sent_announcement.received_from_asn)
+						return false;
 				}
 			}
 
-			reciever.loc_rib[prefix_block_id].fill(recieved_from_id, sender.asn, temp_priority, other_announcement.static_data);
+			return true;
 		}
+
+		return false;
 	}
 }

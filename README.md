@@ -21,7 +21,7 @@ Once the repository is cloned, use traditional CMake building commands in the to
 ./> cd BGPExtrapolator
 ./BGPExtrapolator/> mkdir build
 ./BGPExtrapolator/> cd build/
-./BGPExtrapolator/build/> cmake .
+./BGPExtrapolator/build/> cmake ..
 ./BGPExtrapolator/build/> make
 ./BGPExtrapolator/build/> ./BGPExtrapolator/BGPExtrapolator <any command line arguments here> 
 ```

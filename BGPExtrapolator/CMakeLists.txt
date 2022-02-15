@@ -3,7 +3,8 @@
 #
 cmake_minimum_required (VERSION 3.8)
 
-add_executable (BGPExtrapolator "Main.cpp" "BGPExtrapolator.h"      "ProcessAnnouncement.cpp" "Graph.cpp" "Util.cpp")
+include_directories(${PROJECT_SOURCE_DIR}/BGPExtrapolator/include)
+add_executable (BGPExtrapolator "src/Main.cpp"   "src/Util.cpp" "src/Graphs/Graph.cpp")
 
 #target_link_libraries(BGPExtrapolator PUBLIC rapidcsv PUBLIC Boost::container PUBLIC Boost::config)
 

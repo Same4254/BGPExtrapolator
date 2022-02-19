@@ -1,21 +1,21 @@
 #include "Utils.hpp"
 
-std::vector<ASN> Util::parseASNList(const std::string& as_path_string) {
-	std::vector<ASN> as_path;
+std::vector<ASN> Util::parseASNList(const std::string& asPathString) {
+	std::vector<ASN> asPath;
 
-	if (as_path_string == "{}" || as_path_string == "{ }")
-		return as_path;
+	if (asPathString == "{}" || asPathString == "{ }")
+		return asPath;
 
-	const char* c_as_path_string = as_path_string.c_str();
+	const char* asPathStringC = asPathString.c_str();
 	char* next;
-	long val = strtol(c_as_path_string + 1, &next, 10);
+	long val = strtoul(asPathStringC + 1, &next, 10);
 
-	as_path.push_back(val);
+	asPath.push_back(val);
 
-	while (next < c_as_path_string + as_path_string.size() - 1) {
-		val = strtol(next + 1, &next, 10);
-		as_path.push_back(val);
+	while (next < asPathStringC + asPathString.size() - 1) {
+		val = strtoul(next + 1, &next, 10);
+		asPath.push_back(val);
 	}
 
-	return as_path;
+	return asPath;
 }

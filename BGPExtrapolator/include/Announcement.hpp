@@ -13,7 +13,7 @@ struct AnnouncementStaticData {
 	Prefix prefix;
 	int64_t timestamp;
 
-	std::string prefix_string;
+	std::string prefixString;
 };
 
 struct AnnouncementCachedData {

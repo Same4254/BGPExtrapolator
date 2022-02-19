@@ -141,7 +141,7 @@ void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingCon
 
 	for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
 		//***** PARSING
-		std::string prefix_string = announcements_csv.GetCell<std::string>("prefix", row_index);
+		std::string prefixString = announcements_csv.GetCell<std::string>("prefix", row_index);
 		std::string as_path_string = announcements_csv.GetCell<std::string>("as_path", row_index);
 
 		std::vector<ASN> as_path = Util::parseASNList(as_path_string);
@@ -156,7 +156,7 @@ void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingCon
 		prefix.global_id = prefix_id;
 		prefix.block_id = prefix_block_id;
 
-		SeedPath(as_path, row_index, prefix, prefix_string, timestamp, config);
+		SeedPath(as_path, row_index, prefix, prefixString, timestamp, config);
 	}
 }
 
@@ -170,7 +170,7 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 	staticData.origin = asPath[asPath.size() - 1];
 	staticData.prefix = prefix;
 	staticData.timestamp = timestamp;
-	staticData.prefix_string = prefixString;
+	staticData.prefixString = prefixString;
 
 	int end_index = config.originOnly ? asPath.size() - 1 : 0;
 	for (int i = asPath.size() - 1; i >= end_index; i--) {
@@ -344,7 +344,7 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
 			document.InsertRow<int>(0);
 			size_t row_index = 0;
 
-			document.SetCell<std::string>(prefix_column_index, row_index, ann.staticData->prefix_string);
+			document.SetCell<std::string>(prefix_column_index, row_index, ann.staticData->prefixString);
 			document.SetCell<std::string>(as_path_column_index, row_index, string_stream.str());
 			document.SetCell<int64_t>(timestamp_column_index, row_index, ann.staticData->timestamp);
 			document.SetCell<ASN>(origin_column_index, row_index, ann.staticData->origin);

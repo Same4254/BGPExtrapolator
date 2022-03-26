@@ -79,10 +79,10 @@ protected:
 	//TODO: could replace with a custom allocator and specific data structure for rank iteration and random access
 	std::vector<PropagationPolicy*> idToPolicy;
 
-	std::vector<std::vector<PropagationPolicy*>> rankToPolicies;
-	std::vector<std::vector<PropagationPolicy*>> asIDToProviders;
-	std::vector<std::vector<PropagationPolicy*>> asIDToPeers;
-	std::vector<std::vector<PropagationPolicy*>> asIDToCustomers;
+	std::vector<std::vector<ASN_ID>> rankToIDs;
+	std::vector<std::vector<ASN_ID>> asIDToProviderIDs;
+	std::vector<std::vector<ASN_ID>> asIDToPeerIDs;
+	std::vector<std::vector<ASN_ID>> asIDToCustomerIDs;
 
 	std::vector<AnnouncementStaticData> announcementStaticData;
 
@@ -166,8 +166,12 @@ public:
 		return localRibs.GetAnnouncement(asnID, prefixBlockID);
 	}
 
-	inline AnnouncementStaticData& GetStaticData(const size_t& index) {
+	inline const AnnouncementStaticData& GetStaticData(const size_t& index) const {
 		return announcementStaticData[index];
+	}
+
+	inline PropagationPolicy* GetPropagationPolicy(const ASN_ID& asnID) {
+		return idToPolicy[asnID];
 	}
 
 protected:

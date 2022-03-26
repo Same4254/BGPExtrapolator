@@ -14,9 +14,9 @@ struct RelationshipInfo {
 Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, size_t maximumSeededAnnouncements) : localRibs(relationshipsCSV.GetRowCount(), maximumPrefixBlockID) {
 	//***** Relationship Parsing *****//
 	idToPolicy.resize(relationshipsCSV.GetRowCount());
-	asIDToProviders.resize(relationshipsCSV.GetRowCount());
-	asIDToPeers.resize(relationshipsCSV.GetRowCount());
-	asIDToCustomers.resize(relationshipsCSV.GetRowCount());
+	asIDToProviderIDs.resize(relationshipsCSV.GetRowCount());
+	asIDToPeerIDs.resize(relationshipsCSV.GetRowCount());
+	asIDToCustomerIDs.resize(relationshipsCSV.GetRowCount());
 
 	std::vector<RelationshipInfo> relationshipInfo;
 	relationshipInfo.resize(relationshipsCSV.GetRowCount());
@@ -58,7 +58,8 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
 			relationshipPriority.insert({ std::make_pair(cutomerASN, info.asn), RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER });
 		}
 
-		idToPolicy[nextID] = new BGPPolicy<>(info.asn, info.asnID);
+		//idToPolicy[nextID] = new BGPPolicy<>(info.asn, info.asnID);
+		idToPolicy[nextID] = new BGPPolicy<BGPPolicy<>::CompareRelationships, BGPPolicy<>::ComparePathLengths, BGPPolicy<>::CompareTimestampsPreferNew, BGPPolicy<>::CompareASNsPreferSmaller>(info.asn, info.asnID);
 
 		nextID++;
 	}
@@ -67,18 +68,18 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
 	// Also put the pointer to other AS data in relationship structures 
 
 	//ranks are 0 indexed, so the size of the structure holding the ranks is 1 + maximum index
-	rankToPolicies.resize(maximumRank + 1);
+	rankToIDs.resize(maximumRank + 1);
 	for (int i = 0; i < relationshipInfo.size(); i++) {
 		RelationshipInfo& info = relationshipInfo[i];
 
-		rankToPolicies[relationshipInfo[i].rank].push_back(idToPolicy[info.asnID]);
+		rankToIDs[relationshipInfo[i].rank].push_back(info.asnID);
 
 		for (ASN provider : info.providers) {
 			auto idSearch = asnToID.find(provider);
 			if (idSearch == asnToID.end())
 				continue;
 
-			asIDToProviders[i].push_back(idToPolicy[idSearch->second]);
+			asIDToProviderIDs[i].push_back(idSearch->second);
 		}
 
 		for (ASN peer : info.peers) {
@@ -86,7 +87,7 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
 			if (idSearch == asnToID.end())
 				continue;
 
-			asIDToPeers[i].push_back(idToPolicy[idSearch->second]);
+			asIDToPeerIDs[i].push_back(idSearch->second);
 		}
 
 		for (ASN customer : info.customers) {
@@ -94,7 +95,7 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
 			if (idSearch == asnToID.end())
 				continue;
 
-			asIDToCustomers[i].push_back(idToPolicy[idSearch->second]);
+			asIDToCustomerIDs[i].push_back(idSearch->second);
 		}
 	}
 
@@ -115,7 +116,8 @@ void Graph::ResetAllAnnouncements() {
 			ann.pathLength = 0;
 			ann.recievedFromASN = 0;
 			ann.seeded = 0;
-			ann.staticData = nullptr;
+			//ann.staticData = nullptr;
+			ann.staticDataIndex = 0;
 		}
 	}
 }
@@ -131,7 +133,8 @@ void Graph::ResetAllNonSeededAnnouncements() {
 			ann.pathLength = 0;
 			ann.recievedFromASN = 0;
 			ann.seeded = 0;
-			ann.staticData = nullptr;
+			//ann.staticData = nullptr;
+			ann.staticDataIndex = 0;
 		}
 	}
 }
@@ -172,6 +175,9 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 	staticData.timestamp = timestamp;
 	staticData.prefixString = prefixString;
 
+	ASN_ID lastID = 0;
+	bool lastIDSet = false;
+
 	int end_index = config.originOnly ? asPath.size() - 1 : 0;
 	for (int i = asPath.size() - 1; i >= end_index; i--) {
 		// If AS not in the graph, skip it
@@ -191,35 +197,49 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 		if (i < asPath.size() - 1) {
 			auto search = relationshipPriority.find(std::make_pair(asPath[i + 1], asn));
 			if (search == relationshipPriority.end()) {
+				//TODO check for stub: https://github.com/c-morris/BGPExtrapolator/commit/364abb3d70d8e6aa752450e756348b2e1f82c739
 				relationship = RELATIONSHIP_PRIORITY_BROKEN;
 			} else {
-				//TODO check for stub: https://github.com/c-morris/BGPExtrapolator/commit/364abb3d70d8e6aa752450e756348b2e1f82c739
 				relationship = search->second;
 			}
 		}
 
-		uint8_t newPathLength = MIN_PATH_LENGTH - ((asPath.size() - 1) - i);
+		uint8_t newPathLength = asPath.size() - i;
 
 		//TODO: this needs to be fixed
 		ASN_ID recieved_from_id = asn_id;
-		if (i < asPath.size() - 1)
-			recieved_from_id = asnToID.at(asPath[i + 1]);
+		if (i < asPath.size() - 1) {
+			auto previous_search = asnToID.find(asPath[i + 1]);
+			if (previous_search == asnToID.end() && lastIDSet) {
+				recieved_from_id = lastIDSet;
+			} else if (previous_search != asnToID.end()) {
+				recieved_from_id = previous_search->second;
+			}
+		}
+
+		lastIDSet = true;
+		lastID = asn_id;
 
 		//TODO: Not all of these if-statements plz
 		// 
 		//If there exists an announcement for this prefix already
 		AnnouncementCachedData& currentAnn = localRibs.GetAnnouncement(asn_id, prefix.block_id);
-		if (currentAnn.staticData != nullptr) {
-			if (config.timestampComparison == TIMESTAMP_COMPARISON::PREFER_NEWER && timestamp > currentAnn.staticData->timestamp)
+
+		//if (currentAnn.staticData != nullptr) {
+		if (currentAnn.pathLength != 0) {
+			int64_t currentTimestamp = announcementStaticData[currentAnn.staticDataIndex].timestamp;
+
+			if (config.timestampComparison == TIMESTAMP_COMPARISON::PREFER_NEWER && timestamp > currentTimestamp)
 				continue;
-			else if (config.timestampComparison == TIMESTAMP_COMPARISON::PREFER_OLDER && timestamp < currentAnn.staticData->timestamp)
+			else if (config.timestampComparison == TIMESTAMP_COMPARISON::PREFER_OLDER && timestamp < currentTimestamp)
 				continue;
 
-			if (timestamp == currentAnn.staticData->timestamp) {
+			//if (timestamp == currentAnn.staticData->timestamp) {
+			if (timestamp == currentTimestamp) {
 				//if (recieving_as.loc_rib[prefix.block_id].priority.allFields > priority.allFields)
 				//	continue;
 
-				if (currentAnn.relationship > relationship || currentAnn.pathLength > newPathLength)
+				if (currentAnn.relationship > relationship || currentAnn.pathLength < newPathLength)
 					continue;
 
 				if (currentAnn.relationship == relationship && currentAnn.pathLength == newPathLength) {
@@ -243,7 +263,8 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 		currentAnn.recievedFromASN = recieved_from_asn;
 		currentAnn.relationship = relationship;
 		currentAnn.seeded = 1;
-		currentAnn.staticData = &staticData;
+		//currentAnn.staticData = &staticData;
+		currentAnn.staticDataIndex = staticDataIndex;
 	}
 }
 
@@ -251,19 +272,19 @@ void Graph::Propagate() {
 	// ************ Propagate Up ************//
 
 	// start at the second rank because the first has no customers
-	for (size_t i = 1; i < rankToPolicies.size(); i++)
-		for (auto& provider : rankToPolicies[i])
-			provider->ProcessCustomerAnnouncements(*this, asIDToCustomers[provider->asnID]);
+	for (size_t i = 1; i < rankToIDs.size(); i++)
+		for (auto& providerID : rankToIDs[i])
+			idToPolicy[providerID]->ProcessCustomerAnnouncements(*this, asIDToCustomerIDs[providerID]);
 
-	for (size_t i = 0; i < rankToPolicies.size(); i++)
-		for (auto& as : rankToPolicies[i])
-			as->ProcessPeerAnnouncements(*this, asIDToPeers[as->asnID]);
+	for (size_t i = 0; i < rankToIDs.size(); i++)
+		for (auto& asID : rankToIDs[i])
+			idToPolicy[asID]->ProcessPeerAnnouncements(*this, asIDToPeerIDs[asID]);
 
 	// ************ Propagate Down ************//
 	//Customer looks up to the provider and looks at its data, that is why the - 2 is there
-	for (int i = rankToPolicies.size() - 2; i >= 0; i--)
-		for (auto& customer : rankToPolicies[i])
-			customer->ProcessProviderAnnouncements(*this, asIDToProviders[customer->asnID]);
+	for (int i = rankToIDs.size() - 2; i >= 0; i--)
+		for (auto& customerID : rankToIDs[i])
+			idToPolicy[customerID]->ProcessProviderAnnouncements(*this, asIDToProviderIDs[customerID]);
 }
 
 std::vector<ASN> Graph::Traceback(const ASN& startingASN, const uint32_t& prefixBlockID) {
@@ -322,7 +343,8 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
 			const AnnouncementCachedData &ann = localRibs.GetAnnouncement(id, prefixBlockID);
 
 			//Do nothing if there is no actual announcement at the prefix
-			if (localRibs.GetAnnouncement(id, prefixBlockID).staticData == nullptr)
+			//if (localRibs.GetAnnouncement(id, prefixBlockID).staticData == nullptr)
+			if (localRibs.GetAnnouncement(id, prefixBlockID).pathLength == 0)
 				continue;
 
 			std::vector<ASN> as_path = Traceback(asn, prefixBlockID);
@@ -344,11 +366,19 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
 			document.InsertRow<int>(0);
 			size_t row_index = 0;
 
-			document.SetCell<std::string>(prefix_column_index, row_index, ann.staticData->prefixString);
+			AnnouncementStaticData& staticData = announcementStaticData[ann.staticDataIndex];
+
+			//document.SetCell<std::string>(prefix_column_index, row_index, ann.staticData->prefixString);
+
+			document.SetCell<std::string>(prefix_column_index, row_index, staticData.prefixString);
 			document.SetCell<std::string>(as_path_column_index, row_index, string_stream.str());
-			document.SetCell<int64_t>(timestamp_column_index, row_index, ann.staticData->timestamp);
-			document.SetCell<ASN>(origin_column_index, row_index, ann.staticData->origin);
-			document.SetCell<uint32_t>(prefix_id_column_index, row_index, ann.staticData->prefix.global_id);
+			document.SetCell<int64_t>(timestamp_column_index, row_index, staticData.timestamp);
+			document.SetCell<ASN>(origin_column_index, row_index, staticData.origin);
+			document.SetCell<uint32_t>(prefix_id_column_index, row_index, staticData.prefix.global_id);
+
+			//document.SetCell<int64_t>(timestamp_column_index, row_index, ann.staticData->timestamp);
+			//document.SetCell<ASN>(origin_column_index, row_index, ann.staticData->origin);
+			//document.SetCell<uint32_t>(prefix_id_column_index, row_index, ann.staticData->prefix.global_id);
 		}
 	}
 

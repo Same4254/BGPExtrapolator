@@ -36,5 +36,5 @@ int main() {
         std::cout << "Test Cases Failed" << std::endl;
     }
 
-	return 0;
+    return 0;
 }

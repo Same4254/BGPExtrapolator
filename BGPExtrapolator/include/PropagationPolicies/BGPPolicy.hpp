@@ -32,9 +32,9 @@ public:
 	}
 
 	static inline ComparisonResponse ComparePathLengths(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-		if (recieverAnnouncement.pathLength < senderAnnouncement.pathLength - 1)
+		if (recieverAnnouncement.pathLength < senderAnnouncement.pathLength + 1)
 			return ComparisonResponse::REJECT;
-		else if (recieverAnnouncement.pathLength > senderAnnouncement.pathLength - 1)
+		else if (recieverAnnouncement.pathLength > senderAnnouncement.pathLength + 1)
 			return ComparisonResponse::ACCEPT;
 		return ComparisonResponse::FALL_THROUGH;
 	}
@@ -131,7 +131,7 @@ protected:
 					continue;
 
 				//if (currentAnnouncement.staticData == nullptr || CompareAnnouncements(graph, currentAnnouncement, sender, sendingAnnouncement, relationshipPriority)) {
-				if (sendingAnnouncement.pathLength == 0 || CompareAnnouncements(graph, currentAnnouncement, sender, sendingAnnouncement, relationshipPriority)) {
+				if (currentAnnouncement.pathLength == 0 || CompareAnnouncements(graph, currentAnnouncement, sender, sendingAnnouncement, relationshipPriority)) {
 					//Accept the incoming announcement to replace what is currently in the local rib of this AS
 					currentAnnouncement.pathLength = sendingAnnouncement.pathLength + 1;
 					currentAnnouncement.recievedFromASN = sender->asn;

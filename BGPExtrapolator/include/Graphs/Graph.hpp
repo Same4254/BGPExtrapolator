@@ -102,6 +102,12 @@ public:
 	Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, size_t maximumSeededAnnouncements);
 	~Graph();
 
+    /**
+     * Tests if the two graphs are equivalent. "Equivalent" meaning that the local ribs have the same AS paths.
+     * The seeding flag is ignored.
+     */
+    bool CompareTo(Graph &graph);
+
 	/**
 	 * Resets all announcements to an initial state. No memory is deallocated.
 	*/

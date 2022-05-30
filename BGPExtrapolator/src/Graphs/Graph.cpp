@@ -109,6 +109,34 @@ Graph::~Graph() {
 		delete policy;
 }
 
+bool Graph::CompareTo(Graph &graph2) {
+    if(localRibs.numAses != graph2.localRibs.numAses || localRibs.numPrefixes != graph2.localRibs.numPrefixes)
+        return false;
+    
+    for (ASN_ID asn_id = 0; asn_id < localRibs.numAses; asn_id++) {
+    for (size_t prefix_id = 0; prefix_id < localRibs.numPrefixes; prefix_id++) {
+        AnnouncementCachedData &ann1 = localRibs.GetAnnouncement(asn_id, prefix_id);
+        AnnouncementCachedData &ann2 = localRibs.GetAnnouncement(asn_id, prefix_id);
+
+        if (ann1.pathLength != ann2.pathLength)
+            return false;
+       
+        if (ann1.pathLength == 0)
+            continue;
+
+        if (ann1.recievedFromASN != ann2.recievedFromASN || ann1.relationship != ann2.relationship)
+            return false;
+
+        const AnnouncementStaticData &staticData1 = GetStaticData(ann1.staticDataIndex);
+        const AnnouncementStaticData &staticData2 = graph2.GetStaticData(ann2.staticDataIndex);
+
+        if (staticData1.timestamp != staticData2.timestamp || staticData1.origin != staticData2.origin || staticData1.prefixString != staticData2.prefixString)
+            return false;
+    }}
+
+    return true;
+}
+
 void Graph::ResetAllAnnouncements() {
 	for (int i = 0; i < localRibs.numAses; i++) {
 		for (int j = 0; j < localRibs.numPrefixes; j++) {
@@ -319,14 +347,18 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
 	document.InsertColumn<std::int64_t>(document.GetColumnCount(), std::vector<int64_t>(), "timestamp");
 	document.InsertColumn<std::ASN>(document.GetColumnCount(), std::vector<ASN>(), "origin");
 	document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_id");
+	document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "block_id");
+	document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_block_id");
 
 	size_t prefix_column_index = document.GetColumnIdx("prefix");
 	size_t as_path_column_index = document.GetColumnIdx("as_path");
 	size_t timestamp_column_index = document.GetColumnIdx("timestamp");
 	size_t origin_column_index = document.GetColumnIdx("origin");
 	size_t prefix_id_column_index = document.GetColumnIdx("prefix_id");
-
-	if (localRibsToDump.empty()) {
+	size_t block_id_column_index = document.GetColumnIdx("block_id");
+	size_t prefix_block_id_index = document.GetColumnIdx("prefix_block_id");
+	
+    if (localRibsToDump.empty()) {
 		for (const auto& kv : asnToID)
 			localRibsToDump.push_back(kv.first);
 	}
@@ -375,6 +407,8 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
 			document.SetCell<int64_t>(timestamp_column_index, row_index, staticData.timestamp);
 			document.SetCell<ASN>(origin_column_index, row_index, staticData.origin);
 			document.SetCell<uint32_t>(prefix_id_column_index, row_index, staticData.prefix.global_id);
+            document.SetCell<uint32_t>(block_id_column_index, row_index, 0);
+            document.SetCell<uint32_t>(prefix_block_id_index, row_index, prefixBlockID);
 
 			//document.SetCell<int64_t>(timestamp_column_index, row_index, ann.staticData->timestamp);
 			//document.SetCell<ASN>(origin_column_index, row_index, ann.staticData->origin);

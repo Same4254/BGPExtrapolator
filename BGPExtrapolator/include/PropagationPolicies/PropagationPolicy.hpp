@@ -11,6 +11,7 @@ public:
 
     }
 
+    virtual bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) = 0;
     /**
      * Compares the local rib of this AS with its providers and copies any announcements that are "better"
      * Path length priority should be adjusted to represent the hop from one AS to another.

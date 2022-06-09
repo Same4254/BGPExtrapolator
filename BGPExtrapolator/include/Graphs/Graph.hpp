@@ -68,6 +68,7 @@ class Graph {
 protected:
 	//Each ASN is mapped to a corresponding index called an ID. The purpose to allow direct index lookups rather than mappings.
 	std::unordered_map<ASN, ASN_ID> asnToID;
+    std::vector<ASN> idToASN;
 
 	/**
 	 * Every realtionship has a priority, this stores the cost of moving from ASN1(first element of the pair) to ASN2(second element of the pair)
@@ -82,13 +83,15 @@ protected:
 	std::vector<std::vector<ASN_ID>> rankToIDs;
 	std::vector<std::vector<ASN_ID>> asIDToProviderIDs;
 	std::vector<std::vector<ASN_ID>> asIDToPeerIDs;
+
 	std::vector<std::vector<ASN_ID>> asIDToCustomerIDs;
 
 	std::vector<AnnouncementStaticData> announcementStaticData;
 
-	//LocalRibs are stored separately to allow different memory layouts of local ribs
-	LocalRibs localRibs;
-	//LocalRibsTransposed localRibs;
+    bool stubRemoval;
+    std::unordered_map<ASN, ASN_ID> stubASNToProviderID;
+
+    LocalRibs localRibs;
 
 public:
 
@@ -99,12 +102,12 @@ public:
 	 * @param maximumPrefixBlockID 
 	 * @param maximumSeededAnnouncements 
 	*/
-	Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, size_t maximumSeededAnnouncements);
+	Graph(const std::string &relationshipsFilePath, bool stubRemoval);
 	~Graph();
 
     /**
      * Tests if the two graphs are equivalent. "Equivalent" meaning that the local ribs have the same AS paths.
-     * The seeding flag is ignored.
+     * The seeding flag is ignored. Used for test cases
      */
     bool CompareTo(Graph &graph);
 
@@ -131,7 +134,7 @@ public:
 	 * @param filePathAnnouncements 
 	 * @param config 
 	*/
-	void SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration& config);
+	void SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration& config, size_t maximumPrefixBlockID);
 
 	/**
 	 * Using Gao Rexford rules, this will propagate the announcements throughout the graph. 
@@ -161,13 +164,6 @@ public:
 	*/
 	void GenerateResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump);
 
-	/**
-	 * @return The nuber of prefixes allocated to the local ribs
-	*/
-	inline size_t GetNumPrefixes() {
-		return localRibs.numPrefixes;
-	}
-
 	inline AnnouncementCachedData& GetCachedData(const ASN_ID& asnID, const uint32_t& prefixBlockID) {
 		return localRibs.GetAnnouncement(asnID, prefixBlockID);
 	}
@@ -179,6 +175,9 @@ public:
 	inline PropagationPolicy* GetPropagationPolicy(const ASN_ID& asnID) {
 		return idToPolicy[asnID];
 	}
+
+    inline size_t GetNumASes() { return localRibs.GetNumASes(); }
+    inline size_t GetNumPrefixes() { return localRibs.GetNumPrefixes(); }
 
 protected:
 	/**

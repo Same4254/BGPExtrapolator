@@ -19,3 +19,21 @@ std::vector<ASN> Util::parseASNList(const std::string& asPathString) {
 
     return asPath;
 }
+
+
+bool Util::ASPathContainCycle(const std::vector<ASN> &asPath) {
+    bool cycle = false;
+
+    for (size_t i = 0; i < asPath.size(); i++) {
+        bool changed = false;
+        for (size_t j = i + 1; j < asPath.size(); j++) {
+            if (!changed && asPath[i] != asPath[j]) {
+                changed = true;
+            } else if (changed && asPath[i] == asPath[j]) {
+                changed = true;
+            }
+        }
+    }
+
+    return cycle;
+}

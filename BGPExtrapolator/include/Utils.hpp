@@ -21,4 +21,6 @@ public:
      * @return A vector containing the path, with ordering preserved. Origin is at the end of the vector.
     */
     static std::vector<ASN> parseASNList(const std::string& asPathString);
+
+    static bool ASPathContainCycle(const std::vector<ASN> &asPath);
 };

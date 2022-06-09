@@ -93,29 +93,6 @@ protected:
     //Write the functions to an array so it is iterable (with preserved order)
     std::array<BGPComparisonFunction, sizeof...(T)> comparisons = { T... };
 
-    /**
-     * Compares two announcements and returns whether the sender announcement should replace the reciever announcement in the reciever's local rib.
-     * 
-     * @param graph 
-     * @param recieverAnnouncement 
-     * @param sender 
-     * @param senderAnnouncement 
-     * @param relationshipPriority 
-     * @return 
-    */
-    inline bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        //Since the comparison operations are known at compile time, this loop can be unrolled by the compiler and optimized. Minimizing the perfromance cost of allowing different comarison configurations easily.
-        for (auto& func : comparisons) {
-            ComparisonResponse response = func(graph, this, recieverAnnouncement, sender, senderAnnouncement, relationshipPriority);
-            if (response == ComparisonResponse::ACCEPT)
-                return true;
-            else if (response == ComparisonResponse::REJECT)
-                return false;
-        }
-
-        return false;
-    }
-
     virtual void ProcessRelationship(Graph& graph, const std::vector<ASN_ID>& neighborIDs, const uint8_t& relationshipPriority) {
         for (ASN_ID neighborID : neighborIDs) {
             PropagationPolicy* sender = graph.GetPropagationPolicy(neighborID);
@@ -169,6 +146,29 @@ protected:
 public:
     BGPPolicy(const ASN& asn, const ASN_ID& asnID) : PropagationPolicy(asn, asnID) {
 
+    }
+
+    /**
+     * Compares two announcements and returns whether the sender announcement should replace the reciever announcement in the reciever's local rib.
+     * 
+     * @param graph 
+     * @param recieverAnnouncement 
+     * @param sender 
+     * @param senderAnnouncement 
+     * @param relationshipPriority 
+     * @return 
+    */
+    virtual inline bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
+        //Since the comparison operations are known at compile time, this loop can be unrolled by the compiler and optimized. Minimizing the perfromance cost of allowing different comarison configurations easily.
+        for (auto& func : comparisons) {
+            ComparisonResponse response = func(graph, this, recieverAnnouncement, sender, senderAnnouncement, relationshipPriority);
+            if (response == ComparisonResponse::ACCEPT)
+                return true;
+            else if (response == ComparisonResponse::REJECT)
+                return false;
+        }
+
+        return false;
     }
 
     virtual void ProcessProviderAnnouncements(Graph& graph, const std::vector<ASN_ID>& providerIDs) {

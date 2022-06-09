@@ -8,30 +8,28 @@ struct RelationshipInfo {
     ASN_ID asnID;
 
     int rank;
-    std::vector<ASN> peers, customers, providers;
+    std::vector<ASN> peers, customers, providers, stubs;
 };
 
-Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, size_t maximumSeededAnnouncements) : localRibs(relationshipsCSV.GetRowCount(), maximumPrefixBlockID) {
-    //***** Relationship Parsing *****//
-    idToPolicy.resize(relationshipsCSV.GetRowCount());
-    asIDToProviderIDs.resize(relationshipsCSV.GetRowCount());
-    asIDToPeerIDs.resize(relationshipsCSV.GetRowCount());
-    asIDToCustomerIDs.resize(relationshipsCSV.GetRowCount());
-
+Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubRemoval(stubRemoval) {
+    rapidcsv::Document relationshipsCSV(relationshipsFilePath, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
     std::vector<RelationshipInfo> relationshipInfo;
-    relationshipInfo.resize(relationshipsCSV.GetRowCount());
 
     size_t maximumRank = 0;
     ASN_ID nextID = 0;
 
     //Store the relationships, assign IDs, and find the maximum rank
     for (size_t rowIndex = 0; rowIndex < relationshipsCSV.GetRowCount(); rowIndex++) {
-        RelationshipInfo& info = relationshipInfo[nextID];
+        if (stubRemoval && relationshipsCSV.GetCell<std::string>("stub", rowIndex) == "TRUE")
+            continue;
+
+        RelationshipInfo info;
 
         info.asn = relationshipsCSV.GetCell<ASN>("asn", rowIndex);
         info.asnID = nextID;
 
         asnToID.insert({ info.asn, info.asnID });
+        idToASN.push_back(info.asn);
 
         info.rank = relationshipsCSV.GetCell<int>("propagation_rank", rowIndex);
 
@@ -41,6 +39,12 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
         info.providers = Util::parseASNList(relationshipsCSV.GetCell<std::string>("providers", rowIndex));
         info.peers = Util::parseASNList(relationshipsCSV.GetCell<std::string>("peers", rowIndex));
         info.customers = Util::parseASNList(relationshipsCSV.GetCell<std::string>("customers", rowIndex));
+        info.stubs = Util::parseASNList(relationshipsCSV.GetCell<std::string>("stubs", rowIndex));
+
+        //auto stubs = Util::parseASNList(relationshipsCSV.GetCell<std::string>("stubs", rowIndex));
+        //for (auto stubASN : stubs) {
+        //    info.stubASNToProviderASN.insert(std::make_pair(stubASN, info.asn));
+        //}
 
         //PERF_TODO: These can be optimized (redundant inserts)
         for (auto providerASN : info.providers) {
@@ -58,11 +62,23 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
             relationshipPriority.insert({ std::make_pair(cutomerASN, info.asn), RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER });
         }
 
+        relationshipInfo.push_back(info);
+
         //idToPolicy[nextID] = new BGPPolicy<>(info.asn, info.asnID);
-        idToPolicy[nextID] = new BGPPolicy<BGPPolicy<>::CompareRelationships, BGPPolicy<>::ComparePathLengths, BGPPolicy<>::CompareTimestampsPreferNew, BGPPolicy<>::CompareASNsPreferSmaller>(info.asn, info.asnID);
+        idToPolicy.push_back(new BGPPolicy<BGPPolicy<>::CompareRelationships, BGPPolicy<>::ComparePathLengths, BGPPolicy<>::CompareTimestampsPreferNew, BGPPolicy<>::CompareASNsPreferSmaller>(info.asn, info.asnID));
 
         nextID++;
     }
+
+    //***** Memory Allocation ******/
+    asIDToProviderIDs.resize(relationshipInfo.size());
+    asIDToPeerIDs.resize(relationshipInfo.size());
+    asIDToCustomerIDs.resize(relationshipInfo.size());
+    idToASN.resize(relationshipInfo.size());
+
+    localRibs.SetNumASes(relationshipInfo.size());
+    
+    //***** Relationship Parsing *****//
 
     // Allocate space for the rank structure and point its content to the corresponding data
     // Also put the pointer to other AS data in relationship structures 
@@ -90,6 +106,10 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
             asIDToPeerIDs[i].push_back(idSearch->second);
         }
 
+        for(ASN stubASN : info.stubs) {
+            stubASNToProviderID.insert(std::make_pair(stubASN, i));
+        }
+
         for (ASN customer : info.customers) {
             auto idSearch = asnToID.find(customer);
             if (idSearch == asnToID.end())
@@ -98,10 +118,6 @@ Graph::Graph(rapidcsv::Document& relationshipsCSV, size_t maximumPrefixBlockID, 
             asIDToCustomerIDs[i].push_back(idSearch->second);
         }
     }
-
-    announcementStaticData.resize(maximumSeededAnnouncements);
-
-    ResetAllAnnouncements();
 }
 
 Graph::~Graph() {
@@ -110,13 +126,13 @@ Graph::~Graph() {
 }
 
 bool Graph::CompareTo(Graph &graph2) {
-    if(localRibs.numAses != graph2.localRibs.numAses || localRibs.numPrefixes != graph2.localRibs.numPrefixes)
+    if(GetNumASes() != graph2.GetNumASes() || GetNumPrefixes() != graph2.GetNumPrefixes())
         return false;
     
-    for (ASN_ID asn_id = 0; asn_id < localRibs.numAses; asn_id++) {
-    for (size_t prefix_id = 0; prefix_id < localRibs.numPrefixes; prefix_id++) {
-        AnnouncementCachedData &ann1 = localRibs.GetAnnouncement(asn_id, prefix_id);
-        AnnouncementCachedData &ann2 = localRibs.GetAnnouncement(asn_id, prefix_id);
+    for (ASN_ID asn_id = 0; asn_id < GetNumASes(); asn_id++) {
+    for (size_t prefix_id = 0; prefix_id < GetNumPrefixes(); prefix_id++) {
+        AnnouncementCachedData &ann1 = GetCachedData(asn_id, prefix_id);
+        AnnouncementCachedData &ann2 = graph2.GetCachedData(asn_id, prefix_id);
 
         if (ann1.pathLength != ann2.pathLength)
             return false;
@@ -138,9 +154,9 @@ bool Graph::CompareTo(Graph &graph2) {
 }
 
 void Graph::ResetAllAnnouncements() {
-    for (int i = 0; i < localRibs.numAses; i++) {
-        for (int j = 0; j < localRibs.numPrefixes; j++) {
-            AnnouncementCachedData& ann = localRibs.GetAnnouncement(i, j);
+    for (int i = 0; i < GetNumASes(); i++) {
+        for (int j = 0; j < GetNumPrefixes(); j++) {
+            AnnouncementCachedData& ann = GetCachedData(i, j);
             ann.pathLength = 0;
             ann.recievedFromASN = 0;
             ann.seeded = 0;
@@ -151,24 +167,26 @@ void Graph::ResetAllAnnouncements() {
 }
 
 void Graph::ResetAllNonSeededAnnouncements() {
-    for (int i = 0; i < localRibs.numAses; i++) {
-        for (int j = 0; j < localRibs.numPrefixes; j++) {
-            AnnouncementCachedData& ann = localRibs.GetAnnouncement(i, j);
+    for (int i = 0; i < GetNumASes(); i++) {
+        for (int j = 0; j < GetNumPrefixes(); j++) {
+            AnnouncementCachedData& ann = GetCachedData(i, j);
 
             if (ann.seeded)
                 continue;
 
-            ann.pathLength = 0;
-            ann.recievedFromASN = 0;
-            ann.seeded = 0;
-            //ann.staticData = nullptr;
-            ann.staticDataIndex = 0;
+            ann.SetDefaultState();
         }
     }
 }
 
-void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration &config) {
+void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration &config, size_t maximumPrefixBlockID) {
     rapidcsv::Document announcements_csv(filePathAnnouncements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
+
+    // Allocate memory for the local ribs and the static announcement data
+    announcementStaticData.resize(announcements_csv.GetRowCount());   
+    localRibs.SetNumPrefixes(maximumPrefixBlockID + 1);
+
+    ResetAllAnnouncements();
 
     for (size_t row_index = 0; row_index < announcements_csv.GetRowCount(); row_index++) {
         //***** PARSING
@@ -192,6 +210,7 @@ void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingCon
 }
 
 //TODO Recieved_from needs to be much more robust to the absence of known ASNs in the graph.
+//TODO Traceback may result in a cycle. This should be checked for
 void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, const Prefix& prefix, const std::string& prefixString, int64_t timestamp, const SeedingConfiguration &config) {
     if (asPath.size() == 0)
         return;
@@ -211,8 +230,24 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
         // If AS not in the graph, skip it
         // TODO: This should be an error
         auto asn_search = asnToID.find(asPath[i]);
-        if (asn_search == asnToID.end())
+        if (asn_search == asnToID.end()) {
+            auto stubSearch = stubASNToProviderID.find(asPath[i]);
+            if (stubRemoval && (config.originOnly || asPath.size() == 1) && stubSearch != stubASNToProviderID.end()) {
+                // We have a stub on the path during stub removal, and it is the only one getting a seeded announcement.
+                // When removing stubs, this is a problem because there is no local rib to put the announcement in (since the stub was removed).
+                // Thus we must propagate to the provider now
+                // TODO handle when there is more than one stub propagating the same prefix (technically the ann in the stub is seeded. This is not accounted for in the result generation)
+
+                AnnouncementCachedData &providerAnn = localRibs.GetAnnouncement(stubSearch->second, prefix.block_id);
+                if (providerAnn.isDefaultState()) {
+                    providerAnn.relationship = RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER;
+                    providerAnn.staticDataIndex = staticDataIndex;
+                    providerAnn.pathLength = 2;
+                    providerAnn.recievedFromASN = asPath[i];
+                }
+            }
             continue;
+        }
 
         //If there is prepending, then just keep going along the path. The length is accounted for.
         if (i < asPath.size() - 1 && asPath[i] == asPath[i + 1])
@@ -234,7 +269,7 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 
         uint8_t newPathLength = asPath.size() - i;
 
-        //TODO: this needs to be fixed
+        //TODO: Check the local_rib of the provider. I do not think this works with stub removal
         ASN_ID recieved_from_id = asn_id;
         if (i < asPath.size() - 1) {
             auto previous_search = asnToID.find(asPath[i + 1]);
@@ -251,7 +286,7 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
         //TODO: Not all of these if-statements plz
         // 
         //If there exists an announcement for this prefix already
-        AnnouncementCachedData& currentAnn = localRibs.GetAnnouncement(asn_id, prefix.block_id);
+        AnnouncementCachedData& currentAnn = GetCachedData(asn_id, prefix.block_id);
 
         //if (currentAnn.staticData != nullptr) {
         if (currentAnn.pathLength != 0) {
@@ -323,19 +358,40 @@ std::vector<ASN> Graph::Traceback(const ASN& startingASN, const uint32_t& prefix
 
     //origin recieves from itself
     while (true) {
-        AnnouncementCachedData& ann = localRibs.GetAnnouncement(asnID, prefixBlockID);
+        AnnouncementCachedData& ann = GetCachedData(asnID, prefixBlockID);
         as_path.push_back(asn);
 
         if (asn == ann.recievedFromASN)
             break;
 
         asn = ann.recievedFromASN;
-        asnID = asnToID.at(asn);
+        //asnID = asnToID.at(asn);
+        
+        //Check if the next ASN is somehwere we have already been before
+        bool cycle = false;
+        for (auto visited_asn : as_path) {
+            if (visited_asn == asn) {
+                std::cout << "Cycle Found!" << std::endl;
+                cycle = true;
+            }
+        }
+
+        if (cycle)
+            break;
+
+        auto id_search = asnToID.find(asn);
+        if (id_search == asnToID.end()) {
+            as_path.push_back(asn);
+            break;
+        } else {
+            asnID = id_search->second;
+        } 
     }
 
     return as_path;
 }
 
+//TODO: Check the provider local rib after seeding for stub removal. See if the stub's ASN is the recieved_from_asn when the stub is the origin. Add a check for this when generating the localribs
 void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump) {
     //Create the file, delete if it exists already (std::fstream::trunc)
     std::fstream fStream(resultsFilePath, std::fstream::in | std::fstream::out | std::fstream::trunc);
@@ -361,22 +417,36 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
     if (localRibsToDump.empty()) {
         for (const auto& kv : asnToID)
             localRibsToDump.push_back(kv.first);
+        for (const auto& kv : stubASNToProviderID)
+            localRibsToDump.push_back(kv.first);
     }
 
     //Only dump the RIB of ASes we care about.
     for (ASN asn : localRibsToDump) {
+        ASN_ID id;
+        bool stub = false;
+        ASN_ID stubASN;
+        
         auto id_search = asnToID.find(asn);
-        if (id_search == asnToID.end())
-            continue;
+        if (id_search == asnToID.end()) {
+            auto stub_search = stubASNToProviderID.find(asn);
+            if (stub_search == stubASNToProviderID.end())
+                continue;
 
-        ASN_ID id = id_search->second;
+            stub = true;
+            id = stub_search->second;
+            asn = idToASN.at(id);
+            stubASN = stub_search->first;
+        } else {
+            id = id_search->second;
+        }
 
-        for (uint32_t prefixBlockID = 0; prefixBlockID < localRibs.numPrefixes; prefixBlockID++) {
-            const AnnouncementCachedData &ann = localRibs.GetAnnouncement(id, prefixBlockID);
+        for (uint32_t prefixBlockID = 0; prefixBlockID < GetNumPrefixes(); prefixBlockID++) {
+            const AnnouncementCachedData &ann = GetCachedData(id, prefixBlockID);
 
             //Do nothing if there is no actual announcement at the prefix
             //if (localRibs.GetAnnouncement(id, prefixBlockID).staticData == nullptr)
-            if (localRibs.GetAnnouncement(id, prefixBlockID).pathLength == 0)
+            if (GetCachedData(id, prefixBlockID).pathLength == 0)
                 continue;
 
             std::vector<ASN> as_path = Traceback(asn, prefixBlockID);
@@ -385,13 +455,17 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
             std::stringstream string_stream;
 
             string_stream << "{";
+
+            if (stub)
+                string_stream << stubASN << ",";
+
             for (size_t j = 0; j < as_path.size(); j++) {
                 if (j == as_path.size() - 1)
                     string_stream << as_path[j];
                 else
                     string_stream << as_path[j] << ",";
             }
-
+            
             string_stream << "}";
 
             //****** Write to CSV

@@ -37,5 +37,5 @@ struct AnnouncementCachedData {
         this->relationship = 0;
     }
 
-    inline bool isDefaultState() { return pathLength == 0; }
+    inline bool isDefaultState() const { return pathLength == 0; }
 };

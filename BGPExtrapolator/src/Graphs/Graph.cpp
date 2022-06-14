@@ -1,6 +1,9 @@
 #include "Graphs/Graph.hpp"
 
 #include "PropagationPolicies/BGPPolicy.hpp"
+#include <chrono>
+#include <stdarg.h>
+#include <cstring>
 
 //Temporary struct for building the ranks
 struct RelationshipInfo {
@@ -274,7 +277,7 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
         if (i < asPath.size() - 1) {
             auto previous_search = asnToID.find(asPath[i + 1]);
             if (previous_search == asnToID.end() && lastIDSet) {
-                recieved_from_id = lastIDSet;
+                recieved_from_id = lastID;
             } else if (previous_search != asnToID.end()) {
                 recieved_from_id = previous_search->second;
             }
@@ -310,7 +313,7 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
                         if (rand() % 2 == 0)
                             continue;
                     } else {//lowest recieved_from ASN wins
-                        if (currentAnn.recievedFromASN < asPath[i + 1])
+                        if (currentAnn.recievedFromASN < idToASN[recieved_from_id])
                             continue;
                     }
                 }
@@ -350,9 +353,7 @@ void Graph::Propagate() {
             idToPolicy[customerID]->ProcessProviderAnnouncements(*this, asIDToProviderIDs[customerID]);
 }
 
-std::vector<ASN> Graph::Traceback(const ASN& startingASN, const uint32_t& prefixBlockID) {
-    std::vector<ASN> as_path;
-
+void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const uint32_t prefixBlockID) {
     ASN_ID asnID = asnToID[startingASN];
     ASN asn = startingASN;
 
@@ -387,46 +388,105 @@ std::vector<ASN> Graph::Traceback(const ASN& startingASN, const uint32_t& prefix
             asnID = id_search->second;
         } 
     }
-
-    return as_path;
 }
 
-//TODO: Check the provider local rib after seeding for stub removal. See if the stub's ASN is the recieved_from_asn when the stub is the origin. Add a check for this when generating the localribs
-void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump) {
-    //Create the file, delete if it exists already (std::fstream::trunc)
-    std::fstream fStream(resultsFilePath, std::fstream::in | std::fstream::out | std::fstream::trunc);
-    rapidcsv::Document document("", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER, false, false));
+//class FileBuffer {
+//public:
+//    static const size_t buffer_size = 10000;
+//
+//    char buffer[buffer_size];
+//    FILE *file;
+//    size_t length;
+//
+//    char *current;
+//
+//    char temp[1000];
+//
+//    FileBuffer(FILE *file) : buffer(""), file(file), length(0) {
+//        current = &buffer[0];
+//    }
+//
+//    //inline void write(const char *format, ...) {
+//    //    va_list argptr;
+//    //    va_start(argptr, format);
+//    //    //vfprintf(stderr, format, argptr);
+//    //    int written = vsprintf(temp, format, argptr);
+//
+//    //    if (written > buffer_size - length) {
+//    //        fwrite(buffer, sizeof(char), length, file);
+//    //        length = 0;
+//    //    }
+//
+//    //    strncpy(&buffer[length], temp, written);
+//    //    length += written;
+//
+//    //    va_end(argptr);
+//    //}
+//};
 
-    //Wow, rapidcsv kinda not doing so hot here...
-    document.InsertColumn<std::string>(document.GetColumnCount(), std::vector<std::string>(), "prefix");
-    document.InsertColumn<std::string>(document.GetColumnCount(), std::vector<std::string>(), "as_path");
-    document.InsertColumn<std::int64_t>(document.GetColumnCount(), std::vector<int64_t>(), "timestamp");
-    document.InsertColumn<std::ASN>(document.GetColumnCount(), std::vector<ASN>(), "origin");
-    document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_id");
-    document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "block_id");
-    document.InsertColumn<uint32_t>(document.GetColumnCount(), std::vector<uint32_t>(), "prefix_block_id");
+class FileBuffer {
+public:
+    static const int BUFFER_CAPACITY = 10000;
+    static const int BUFFER_FLUSH_THRESHOLD = 1000;
 
-    size_t prefix_column_index = document.GetColumnIdx("prefix");
-    size_t as_path_column_index = document.GetColumnIdx("as_path");
-    size_t timestamp_column_index = document.GetColumnIdx("timestamp");
-    size_t origin_column_index = document.GetColumnIdx("origin");
-    size_t prefix_id_column_index = document.GetColumnIdx("prefix_id");
-    size_t block_id_column_index = document.GetColumnIdx("block_id");
-    size_t prefix_block_id_index = document.GetColumnIdx("prefix_block_id");
-    
-    if (localRibsToDump.empty()) {
-        for (const auto& kv : asnToID)
-            localRibsToDump.push_back(kv.first);
-        for (const auto& kv : stubASNToProviderID)
-            localRibsToDump.push_back(kv.first);
+    char buffer[BUFFER_CAPACITY];
+    int bufferLength;
+
+    FILE *f;
+
+    FileBuffer(FILE *f) : bufferLength(0), f(f) {
+
     }
 
-    //Only dump the RIB of ASes we care about.
-    for (ASN asn : localRibsToDump) {
+    void write(const char *format, ...) {
+        va_list argptr;
+        va_start(argptr, format);
+        //vfprintf(stderr, format, argptr);
+        bufferLength += vsprintf(&buffer[bufferLength], format, argptr);
+
+        if (bufferLength > BUFFER_CAPACITY - BUFFER_FLUSH_THRESHOLD) {
+            fwrite(buffer, sizeof(char), bufferLength, f);
+            bufferLength = 0;
+        }
+
+        va_end(argptr);
+    }
+
+    void flush() {
+        fwrite(buffer, sizeof(char), bufferLength, f);
+        bufferLength = 0;
+    }
+};
+
+//TODO: Check the provider local rib after seeding for stub removal. See if the stub's ASN is the recieved_from_asn when the stub is the origin. Add a check for this when generating the localribs
+void Graph::GenerateTracebackResultsCSV(const std::string& resultsFilePath, std::vector<ASN> asns) {
+    //Create the file, delete if it exists already (std::fstream::trunc)
+    FILE *f = fopen(resultsFilePath.c_str(), "w");
+    FileBuffer fileBuffer(f);
+
+    fileBuffer.write("prefix\ttimestamp\torigin\tprefix_id\tblock_id\tprefix_block_id\tas_paths\n");
+
+    if (asns.empty()) {
+        for (const auto& kv : asnToID)
+            asns.push_back(kv.first);
+        for (const auto& kv : stubASNToProviderID)
+            asns.push_back(kv.first);
+    }
+
+    struct CachedPair {
+        ASN_ID id;
+        int64_t stubASN;
+    };
+
+    std::vector<CachedPair> localRibsToDump;
+
+    localRibsToDump.reserve(asns.size());
+
+    for (ASN asn : asns) {
         ASN_ID id;
         bool stub = false;
-        ASN_ID stubASN;
-        
+        ASN_ID stubASN = -1;
+
         auto id_search = asnToID.find(asn);
         if (id_search == asnToID.end()) {
             auto stub_search = stubASNToProviderID.find(asn);
@@ -441,55 +501,69 @@ void Graph::GenerateResultsCSV(const std::string& resultsFilePath, std::vector<A
             id = id_search->second;
         }
 
-        for (uint32_t prefixBlockID = 0; prefixBlockID < GetNumPrefixes(); prefixBlockID++) {
-            const AnnouncementCachedData &ann = GetCachedData(id, prefixBlockID);
+        localRibsToDump.push_back({ id, stubASN });
+    }
+
+    //Only dump the RIB of ASes we care about.
+    std::vector<ASN> as_path;
+    for (uint32_t prefixBlockID = 0; prefixBlockID < GetNumPrefixes(); prefixBlockID++) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        bool prefixWritten = false;
+
+        for (size_t i = 0; i < localRibsToDump.size(); i++) {
+            CachedPair pair = localRibsToDump[i];
+            ASN asn = idToASN.at(pair.id);
+
+            const AnnouncementCachedData &ann = GetCachedData(pair.id, prefixBlockID);
 
             //Do nothing if there is no actual announcement at the prefix
-            //if (localRibs.GetAnnouncement(id, prefixBlockID).staticData == nullptr)
-            if (GetCachedData(id, prefixBlockID).pathLength == 0)
+            //if (ann.isDefaultState())
+            if (ann.pathLength == 0)
                 continue;
 
-            std::vector<ASN> as_path = Traceback(asn, prefixBlockID);
+            as_path.clear();
+            Traceback(as_path, asn, prefixBlockID);
 
             //***** Build String
-            std::stringstream string_stream;
+            AnnouncementStaticData& staticData = announcementStaticData[ann.staticDataIndex];
 
-            string_stream << "{";
+            if (!prefixWritten) {
+                fileBuffer.write("%s\t%lli\t%i\t%i\t0\t%i\t", staticData.prefixString.c_str(), staticData.timestamp, staticData.origin, staticData.prefix.global_id, prefixBlockID);
 
-            if (stub)
-                string_stream << stubASN << ",";
+                prefixWritten = true;
+            }
+
+            fileBuffer.write("{");
+
+            if (pair.stubASN >= 0)
+                fileBuffer.write("%d,", pair.stubASN);
 
             for (size_t j = 0; j < as_path.size(); j++) {
                 if (j == as_path.size() - 1)
-                    string_stream << as_path[j];
+                    fileBuffer.write("%d", as_path[j]);
                 else
-                    string_stream << as_path[j] << ",";
+                    fileBuffer.write("%d,", as_path[j]);
             }
             
-            string_stream << "}";
-
-            //****** Write to CSV
-            document.InsertRow<int>(0);
-            size_t row_index = 0;
-
-            AnnouncementStaticData& staticData = announcementStaticData[ann.staticDataIndex];
-
-            //document.SetCell<std::string>(prefix_column_index, row_index, ann.staticData->prefixString);
-
-            document.SetCell<std::string>(prefix_column_index, row_index, staticData.prefixString);
-            document.SetCell<std::string>(as_path_column_index, row_index, string_stream.str());
-            document.SetCell<int64_t>(timestamp_column_index, row_index, staticData.timestamp);
-            document.SetCell<ASN>(origin_column_index, row_index, staticData.origin);
-            document.SetCell<uint32_t>(prefix_id_column_index, row_index, staticData.prefix.global_id);
-            document.SetCell<uint32_t>(block_id_column_index, row_index, 0);
-            document.SetCell<uint32_t>(prefix_block_id_index, row_index, prefixBlockID);
-
-            //document.SetCell<int64_t>(timestamp_column_index, row_index, ann.staticData->timestamp);
-            //document.SetCell<ASN>(origin_column_index, row_index, ann.staticData->origin);
-            //document.SetCell<uint32_t>(prefix_id_column_index, row_index, ann.staticData->prefix.global_id);
+            fileBuffer.write("}");
         }
+
+        fileBuffer.write("\n");
+
+        auto t2 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float> time = t2 - t1;
+
+        //std::cout << time.count() << "s" << std::endl;
     }
 
-    document.Save(fStream);
-    fStream.close();
+    fileBuffer.flush();
+
+    /*if (bufferLength > 0) {
+        fwrite(buffer, sizeof(char), bufferLength, f);
+    }*/
+
+    fclose(f);
+
+    //document.Save(fStream);
+    //fStream.close();
 }

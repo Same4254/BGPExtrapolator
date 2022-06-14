@@ -20,7 +20,7 @@ bool RunTestCases(bool stubRemoval) {
 
         g.Propagate();
 
-        g.GenerateResultsCSV("TestCases/" + s + "-Results.txt", std::vector<uint32_t>());
+        g.GenerateTracebackResultsCSV("TestCases/" + s + "-Results.txt", std::vector<uint32_t>());
         
         // Recreate a new graph with all of the local ribs (include the stubs if they were removed)
         Graph test("TestCases/" + s + "-Relationships.txt", false);
@@ -40,11 +40,11 @@ bool RunTestCases(bool stubRemoval) {
 }
 
 int main() {
-    if (RunTestCases(true) && RunTestCases(false)) {
+    /*if (RunTestCases(true) && RunTestCases(false)) {
         std::cout << "Test Cases Passed!" << std::endl;
     } else {
         std::cout << "Test Cases Failed" << std::endl;
-    }
+    }*/
 
     Graph graphWithStubs("TestCases/RealData-Relationships.txt", false);
 
@@ -66,8 +66,12 @@ int main() {
     std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
 
     std::cout << "Writing Results..." << std::endl;
-    graphWithStubs.GenerateResultsCSV("TestCases/RealResults-Stubs.csv", {});
-    std::cout << "Result Written!" << std::endl;
+    t1 = std::chrono::high_resolution_clock::now();
+    graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.csv", {});
+    t2 = std::chrono::high_resolution_clock::now();
+
+    time = t2 - t1;
+    std::cout << "Result Written! " << time.count() << std::endl;
 
     //Graph graphNoStubs("TestCases/RealData-Relationships.txt", false);
 

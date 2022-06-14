@@ -150,9 +150,9 @@ public:
 	 * 
 	 * @param startingASN 
 	 * @param prefixBlockID 
-	 * @return AS_PATH of the announcement. The list ends with the origin (index: size - 1) and starts with the given ASN (index: 0)
+	 * @param as_path -> the list to add to containing the traceback of ASNS
 	*/
-	std::vector<ASN> Traceback(const ASN& startingASN, const uint32_t& prefixBlockID);
+	void Traceback(std::vector<ASN> &as_path, const ASN startingASN, const uint32_t prefixBlockID);
 
 	/**
 	 * Write the local ribs of the provided ASNs to the CSV file at the given location.
@@ -162,7 +162,7 @@ public:
 	 * @param resultsFilePath 
 	 * @param localRibsToDump 
 	*/
-	void GenerateResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump);
+	void GenerateTracebackResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump);
 
 	inline AnnouncementCachedData& GetCachedData(const ASN_ID& asnID, const uint32_t& prefixBlockID) {
 		return localRibs.GetAnnouncement(asnID, prefixBlockID);

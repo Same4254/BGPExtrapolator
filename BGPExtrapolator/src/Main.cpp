@@ -23,30 +23,32 @@ bool RunTestCases(bool stubRemoval) {
         g.GenerateTracebackResultsCSV("TestCases/" + s + "-Results.txt", std::vector<uint32_t>());
         
         // Recreate a new graph with all of the local ribs (include the stubs if they were removed)
-        Graph test("TestCases/" + s + "-Relationships.txt", false);
-        test.SeedBlock("TestCases/" + s + "-Results.txt", config, 1);
+        //Graph test("TestCases/" + s + "-Relationships.txt", false);
+        //test.SeedBlock("TestCases/" + s + "-Results.txt", config, 1);
 
-        //rapidcsv::Document d2("TestCases/" + s + "-Relationships.txt", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams('\t'));
-        Graph g2("TestCases/" + s + "-Relationships.txt", false);
-        g2.SeedBlock("TestCases/" + s + "-Truth.txt", config, 1);
+        ////rapidcsv::Document d2("TestCases/" + s + "-Relationships.txt", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams('\t'));
+        //Graph g2("TestCases/" + s + "-Relationships.txt", false);
+        //g2.SeedBlock("TestCases/" + s + "-Truth.txt", config, 1);
 
-        if(!test.CompareTo(g2)) {
-            std::cout << "Test Case " + s + " Failed!" << std::endl;
-            testCasesPassed = false;
-        }
+        //if(!test.CompareTo(g2)) {
+        //    std::cout << "Test Case " + s + " Failed!" << std::endl;
+        //    testCasesPassed = false;
+        //}
     }
 
     return testCasesPassed;
 }
 
 int main() {
+    //RunTestCases(true);
+    //RunTestCases(false);
     /*if (RunTestCases(true) && RunTestCases(false)) {
         std::cout << "Test Cases Passed!" << std::endl;
     } else {
         std::cout << "Test Cases Failed" << std::endl;
     }*/
 
-    Graph graphWithStubs("TestCases/RealData-Relationships.txt", false);
+    Graph graphWithStubs("TestCases/RealData-Relationships.txt", true);
 
     SeedingConfiguration config;
     config.originOnly = false;
@@ -65,13 +67,13 @@ int main() {
 
     std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
 
-    /*std::cout << "Writing Results..." << std::endl;
+    std::cout << "Writing Results..." << std::endl;
     t1 = std::chrono::high_resolution_clock::now();
     graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.csv", {});
     t2 = std::chrono::high_resolution_clock::now();
 
     time = t2 - t1;
-    std::cout << "Result Written! " << time.count() << std::endl;*/
+    std::cout << "Result Written! " << time.count() << std::endl;
 
     //Graph graphNoStubs("TestCases/RealData-Relationships.txt", false);
 

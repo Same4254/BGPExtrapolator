@@ -29,6 +29,11 @@ struct SeedingConfiguration {
 	TIEBRAKING_METHOD tiebrakingMethod;
 };
 
+struct ASN_ASNID_PAIR {
+	ASN asn;
+	ASN_ID id;
+};
+
 //Circular dependency
 class PropagationPolicy;
 
@@ -81,10 +86,10 @@ protected:
 	std::vector<PropagationPolicy*> idToPolicy;
 
 	std::vector<std::vector<ASN_ID>> rankToIDs;
-	std::vector<std::vector<ASN_ID>> asIDToProviderIDs;
-	std::vector<std::vector<ASN_ID>> asIDToPeerIDs;
+	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToProviderIDs;
+	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToPeerIDs;
 
-	std::vector<std::vector<ASN_ID>> asIDToCustomerIDs;
+	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToCustomerIDs;
 
 	std::vector<AnnouncementStaticData> announcementStaticData;
 
@@ -163,6 +168,8 @@ public:
 	 * @param localRibsToDump 
 	*/
 	void GenerateTracebackResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump);
+
+	inline ASN GetASN(const ASN_ID id) const { return idToASN[id]; }
 
 	inline AnnouncementCachedData& GetCachedData(const ASN_ID& asnID, const uint32_t& prefixBlockID) {
 		return localRibs.GetAnnouncement(asnID, prefixBlockID);

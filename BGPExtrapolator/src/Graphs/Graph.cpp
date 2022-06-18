@@ -68,7 +68,7 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
         relationshipInfo.push_back(info);
 
         //idToPolicy[nextID] = new BGPPolicy<>(info.asn, info.asnID);
-        idToPolicy.push_back(new BGPPolicy<BGPPolicy<>::CompareRelationships, BGPPolicy<>::ComparePathLengths, BGPPolicy<>::CompareTimestampsPreferNew, BGPPolicy<>::CompareASNsPreferSmaller>(info.asn, info.asnID));
+        idToPolicy.push_back(new BGPPolicy(info.asn, info.asnID));
 
         nextID++;
     }
@@ -98,7 +98,7 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
             if (idSearch == asnToID.end())
                 continue;
 
-            asIDToProviderIDs[i].push_back(idSearch->second);
+            asIDToProviderIDs[i].push_back( { provider, idSearch->second } );
         }
 
         for (ASN peer : info.peers) {
@@ -106,7 +106,7 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
             if (idSearch == asnToID.end())
                 continue;
 
-            asIDToPeerIDs[i].push_back(idSearch->second);
+            asIDToPeerIDs[i].push_back( { peer, idSearch->second } );
         }
 
         for(ASN stubASN : info.stubs) {
@@ -118,7 +118,7 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
             if (idSearch == asnToID.end())
                 continue;
 
-            asIDToCustomerIDs[i].push_back(idSearch->second);
+            asIDToCustomerIDs[i].push_back( { customer, idSearch->second } );
         }
     }
 }

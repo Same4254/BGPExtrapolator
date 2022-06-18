@@ -4,13 +4,6 @@
 
 #include "PropagationPolicy.hpp"
 
-enum class ComparisonResponse {
-    ACCEPT, FALL_THROUGH, REJECT
-};
-
-//Function that compares a component of two announcements and returns the proper response due to the result of that comparison
-typedef ComparisonResponse (*BGPComparisonFunction)(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority);
-
 /**
  * The BGP policy is the vanilla behvior of an AS during propagation.
  * 
@@ -18,129 +11,64 @@ typedef ComparisonResponse (*BGPComparisonFunction)(const Graph& graph, const Pr
  * The templating of this class allows the comparison operations of the policy to be unrolled at compile-time by the compiler and allow it to inline and optimize the comparison operations
  * Order of these comparison operations should be preserved with how they are present in the template parameters
 */
-template<BGPComparisonFunction... T>
-class BGPPolicy : public PropagationPolicy {
+class BGPPolicy final : public PropagationPolicy {
 public:
-    //***** COMPARISON FUNCTIONS ******/
-
-    static inline ComparisonResponse CompareRelationships(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        if (recieverAnnouncement.relationship > relationshipPriority)
-            return ComparisonResponse::REJECT;
-        else if (recieverAnnouncement.relationship < relationshipPriority)
-            return ComparisonResponse::ACCEPT;
-        return ComparisonResponse::FALL_THROUGH;
-    }
-
-    static inline ComparisonResponse ComparePathLengths(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        if (recieverAnnouncement.pathLength < senderAnnouncement.pathLength + 1)
-            return ComparisonResponse::REJECT;
-        else if (recieverAnnouncement.pathLength > senderAnnouncement.pathLength + 1)
-            return ComparisonResponse::ACCEPT;
-        return ComparisonResponse::FALL_THROUGH;
-    }
-
-    //static inline ComparisonResponse CompareTimestampsPreferOld(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-    //  if (recieverAnnouncement.staticData->timestamp < senderAnnouncement.staticData->timestamp)
-    //      return ComparisonResponse::REJECT;
-    //  else if (recieverAnnouncement.staticData->timestamp > senderAnnouncement.staticData->timestamp)
-    //      return ComparisonResponse::ACCEPT;
-    //  return ComparisonResponse::FALL_THROUGH;
-    //}
-
-    //static inline ComparisonResponse CompareTimestampsPreferNew(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-    //  if (recieverAnnouncement.staticData->timestamp > senderAnnouncement.staticData->timestamp)
-    //      return ComparisonResponse::REJECT;
-    //  else if (recieverAnnouncement.staticData->timestamp < senderAnnouncement.staticData->timestamp)
-    //      return ComparisonResponse::ACCEPT;
-    //  return ComparisonResponse::FALL_THROUGH;
-    //}
-
-    static inline ComparisonResponse CompareTimestampsPreferOld(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        const AnnouncementStaticData& recieverStaticData = graph.GetStaticData(recieverAnnouncement.staticDataIndex);
-        const AnnouncementStaticData& senderStaticData = graph.GetStaticData(senderAnnouncement.staticDataIndex);
-        
-        if (recieverStaticData.timestamp < senderStaticData.timestamp)
-            return ComparisonResponse::REJECT;
-        else if (recieverStaticData.timestamp > senderStaticData.timestamp)
-            return ComparisonResponse::ACCEPT;
-        return ComparisonResponse::FALL_THROUGH;
-    }
-
-    static inline ComparisonResponse CompareTimestampsPreferNew(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        const AnnouncementStaticData& recieverStaticData = graph.GetStaticData(recieverAnnouncement.staticDataIndex);
-        const AnnouncementStaticData& senderStaticData = graph.GetStaticData(senderAnnouncement.staticDataIndex);
-        
-        if (recieverStaticData.timestamp > senderStaticData.timestamp)
-            return ComparisonResponse::REJECT;
-        else if (recieverStaticData.timestamp < senderStaticData.timestamp)
-            return ComparisonResponse::ACCEPT;
-        return ComparisonResponse::FALL_THROUGH;
-    }
-
-    static inline ComparisonResponse CompareASNsPreferSmaller(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        if (recieverAnnouncement.recievedFromASN < sender->asn)
-            return ComparisonResponse::REJECT;
-        return ComparisonResponse::ACCEPT;
-    }
-
-    static inline ComparisonResponse CompareRandom(const Graph& graph, const PropagationPolicy* reciever, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        if (rand() % 2 == 0)
-            return ComparisonResponse::ACCEPT;
-        return ComparisonResponse::REJECT;
-    }
-
 protected:
-    //Write the functions to an array so it is iterable (with preserved order)
-    std::array<BGPComparisonFunction, sizeof...(T)> comparisons = { T... };
-
-    virtual void ProcessRelationship(Graph& graph, const std::vector<ASN_ID>& neighborIDs, const uint8_t& relationshipPriority) {
-        for (ASN_ID neighborID : neighborIDs) {
-            PropagationPolicy* sender = graph.GetPropagationPolicy(neighborID);
+    virtual void ProcessRelationship(Graph& graph, const std::vector<ASN_ASNID_PAIR>& neighbors, const uint8_t& relationshipPriority) {
+        for (ASN_ASNID_PAIR neighbor : neighbors) {
+            ASN_ID neighborID = neighbor.id;
+            ASN neighborASN = neighbor.asn;
 
             for (uint32_t i = 0; i < graph.GetNumPrefixes(); i++) {
                 AnnouncementCachedData& currentAnnouncement = graph.GetCachedData(asnID, i);
                 AnnouncementCachedData& sendingAnnouncement = graph.GetCachedData(neighborID, i);
 
-                //Null static data means that the announcement does not exist (just allocated bytes of memory)
-                //Don't replace a seeded announcement
-                //if (sendingAnnouncement.staticData == nullptr || currentAnnouncement.seeded)
-                if (sendingAnnouncement.pathLength == 0 || currentAnnouncement.seeded)
-                    continue;
-
-                //if (currentAnnouncement.staticData == nullptr || CompareAnnouncements(graph, currentAnnouncement, sender, sendingAnnouncement, relationshipPriority)) {
-                if (currentAnnouncement.pathLength == 0 || CompareAnnouncements(graph, currentAnnouncement, sender, sendingAnnouncement, relationshipPriority)) {
-                    //Accept the incoming announcement to replace what is currently in the local rib of this AS
-                    currentAnnouncement.pathLength = sendingAnnouncement.pathLength + 1;
-                    currentAnnouncement.recievedFromASN = sender->asn;
-                    currentAnnouncement.relationship = relationshipPriority;
-                    //currentAnnouncement.staticData = sendingAnnouncement.staticData;
-                    currentAnnouncement.staticDataIndex = sendingAnnouncement.staticDataIndex;
+                if (CompareAnnouncements(graph, currentAnnouncement, neighborASN, sendingAnnouncement, relationshipPriority)) {
+                    AcceptAnnouncement(currentAnnouncement, sendingAnnouncement, neighborASN, relationshipPriority);
                 }
+
+                ////Null static data means that the announcement does not exist (just allocated bytes of memory)
+                ////Don't replace a seeded announcement
+                //if (sendingAnnouncement.isDefaultState() || currentAnnouncement.seeded)
+                //    continue;
+
+                //if (currentAnnouncement.isDefaultState()) {
+                //    AcceptAnnouncement(currentAnnouncement, sendingAnnouncement, neighborASN, relationshipPriority);
+                //}
+                //
+                //bool accept = false;
+                //if (relationshipPriority > currentAnnouncement.relationship) {
+                //    accept = true;
+                //}
+                //else if (relationshipPriority == currentAnnouncement.relationship) {
+                //    if (sendingAnnouncement.pathLength + 1 < currentAnnouncement.pathLength) {
+                //        accept = true;
+                //    }
+                //    else if (sendingAnnouncement.pathLength + 1 == currentAnnouncement.pathLength) {
+                //        int64_t sendingTimestamp = graph.GetStaticData(sendingAnnouncement.staticDataIndex).timestamp;
+                //        int64_t currentTimestamp = graph.GetStaticData(currentAnnouncement.staticDataIndex).timestamp;
+                //
+                //        if (sendingTimestamp > currentTimestamp) {
+                //            accept = true;
+                //        }
+                //        else if (sendingTimestamp == currentTimestamp) {
+                //            accept = neighborASN < currentAnnouncement.recievedFromASN;
+                //        }
+                //    }
+                //}
+                //
+                //if (accept) {
+                //    AcceptAnnouncement(currentAnnouncement, sendingAnnouncement, neighborASN, relationshipPriority);
+                //}
             }
         }
+    }
 
-        //for (uint32_t i = 0; i < graph.GetNumPrefixes(); i++) {
-        //  AnnouncementCachedData& currentAnnouncement = graph.GetCachedData(asnID, i);
-        //  if (currentAnnouncement.staticData != nullptr || currentAnnouncement.seeded)
-        //      continue;
-        //  
-        //  for (PropagationPolicy* neighbor : neighbors) {
-        //      AnnouncementCachedData& sendingAnnouncement = graph.GetCachedData(neighbor->asnID, i);
-
-        //      //Null static data means that the announcement does not exist (just allocated bytes of memory)
-        //      //Don't replace a seeded announcement
-        //      if (sendingAnnouncement.staticData == nullptr)
-        //          continue;
-
-        //      if (currentAnnouncement.staticData == nullptr || CompareAnnouncements(graph, currentAnnouncement, neighbor, sendingAnnouncement, relationshipPriority)) {
-        //          //Accept the incoming announcement to replace what is currently in the local rib of this AS
-        //          currentAnnouncement.pathLength = sendingAnnouncement.pathLength + 1;
-        //          currentAnnouncement.recievedFromASN = neighbor->asn;
-        //          currentAnnouncement.relationship = relationshipPriority;
-        //          currentAnnouncement.staticData = sendingAnnouncement.staticData;
-        //      }
-        //  }
-        //}
+    inline void AcceptAnnouncement(AnnouncementCachedData &currentAnnouncement, const AnnouncementCachedData &sendingAnnouncement, const ASN neighborASN, const uint8_t relationshipPriority) {
+        currentAnnouncement.pathLength = sendingAnnouncement.pathLength + 1;
+        currentAnnouncement.recievedFromASN = neighborASN;
+        currentAnnouncement.relationship = relationshipPriority;
+        currentAnnouncement.staticDataIndex = sendingAnnouncement.staticDataIndex;
     }
 
 public:
@@ -158,28 +86,53 @@ public:
      * @param relationshipPriority 
      * @return 
     */
-    virtual inline bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& recieverAnnouncement, const PropagationPolicy* sender, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) {
-        //Since the comparison operations are known at compile time, this loop can be unrolled by the compiler and optimized. Minimizing the perfromance cost of allowing different comarison configurations easily.
-        for (auto& func : comparisons) {
-            ComparisonResponse response = func(graph, this, recieverAnnouncement, sender, senderAnnouncement, relationshipPriority);
-            if (response == ComparisonResponse::ACCEPT)
+    inline bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& currentAnnouncement, const ASN neighborASN, const AnnouncementCachedData& sendingAnnouncement, const uint8_t& relationshipPriority) {
+        //Null static data means that the announcement does not exist (just allocated bytes of memory)
+                //Don't replace a seeded announcement
+        if (sendingAnnouncement.isDefaultState() || currentAnnouncement.seeded)
+            return false;
+
+        if (currentAnnouncement.isDefaultState()) {
+            return true;
+        }
+
+        if (relationshipPriority > currentAnnouncement.relationship) {
+            return true;
+        }
+        else if (relationshipPriority == currentAnnouncement.relationship) {
+            if (sendingAnnouncement.pathLength + 1 < currentAnnouncement.pathLength) {
                 return true;
-            else if (response == ComparisonResponse::REJECT)
-                return false;
+            }
+            else if (sendingAnnouncement.pathLength + 1 == currentAnnouncement.pathLength) {
+                int64_t sendingTimestamp = graph.GetStaticData(sendingAnnouncement.staticDataIndex).timestamp;
+                int64_t currentTimestamp = graph.GetStaticData(currentAnnouncement.staticDataIndex).timestamp;
+
+                if (sendingTimestamp > currentTimestamp) {
+                    return true;
+                }
+                else if (sendingTimestamp == currentTimestamp) {
+                    return neighborASN < currentAnnouncement.recievedFromASN;
+                }
+            }
         }
 
         return false;
     }
 
-    virtual void ProcessProviderAnnouncements(Graph& graph, const std::vector<ASN_ID>& providerIDs) {
+    /*inline bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& currentAnnouncement, const ASN neighborASN, const AnnouncementCachedData& sendingAnnouncement, const uint8_t& relationshipPriority) {
+    
+        return false;
+    }*/
+
+    virtual void ProcessProviderAnnouncements(Graph& graph, const std::vector<ASN_ASNID_PAIR>& providerIDs) {
         ProcessRelationship(graph, providerIDs, RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER);
     }
 
-    virtual void ProcessPeerAnnouncements(Graph& graph, const std::vector<ASN_ID>& peerIDs) {
+    virtual void ProcessPeerAnnouncements(Graph& graph, const std::vector<ASN_ASNID_PAIR>& peerIDs) {
         ProcessRelationship(graph, peerIDs, RELATIONSHIP_PRIORITY_PEER_TO_PEER);
     }
 
-    virtual void ProcessCustomerAnnouncements(Graph& graph, const std::vector<ASN_ID>& customerIDs) {
+    virtual void ProcessCustomerAnnouncements(Graph& graph, const std::vector<ASN_ASNID_PAIR>& customerIDs) {
         ProcessRelationship(graph, customerIDs, RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER);
     }
 };

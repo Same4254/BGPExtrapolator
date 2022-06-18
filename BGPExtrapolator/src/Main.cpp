@@ -65,13 +65,13 @@ int main() {
 
     std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
 
-    std::cout << "Writing Results..." << std::endl;
+    /*std::cout << "Writing Results..." << std::endl;
     t1 = std::chrono::high_resolution_clock::now();
     graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.csv", {});
     t2 = std::chrono::high_resolution_clock::now();
 
     time = t2 - t1;
-    std::cout << "Result Written! " << time.count() << std::endl;
+    std::cout << "Result Written! " << time.count() << std::endl;*/
 
     //Graph graphNoStubs("TestCases/RealData-Relationships.txt", false);
 

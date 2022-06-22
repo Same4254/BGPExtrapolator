@@ -18,7 +18,14 @@ public:
         return localRibs[asnID][prefixBlockID];
     }
 
-    inline size_t GetNumASes() { return numAses; }
+    /**
+     * Returns a const reference to an announcement that cannot be modified
+     */
+    inline const AnnouncementCachedData& GetAnnouncement_ReadOnly(const ASN_ID &asnID, const uint32_t &prefixBlockID) const {
+        return localRibs[asnID][prefixBlockID];
+    }
+
+    inline size_t GetNumASes() const { return numAses; }
     
     inline void SetNumASes(size_t numASes) {
         this->numAses = numASes;
@@ -33,7 +40,7 @@ public:
         }
     }
     
-    inline size_t GetNumPrefixes() { return numPrefixes; }
+    inline size_t GetNumPrefixes() const { return numPrefixes; }
 
     inline void SetNumPrefixes(size_t numPrefixes) {
         this->numPrefixes = numPrefixes;

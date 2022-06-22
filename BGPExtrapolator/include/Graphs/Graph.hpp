@@ -23,12 +23,18 @@ enum TIEBRAKING_METHOD {
 	PREFER_LOWEST_ASN
 };
 
+/**
+ * Describes the desired method of seeding
+ */
 struct SeedingConfiguration {
 	bool originOnly;
 	TIMESTAMP_COMPARISON timestampComparison;
 	TIEBRAKING_METHOD tiebrakingMethod;
 };
 
+/**
+ * A small pair to cache ASN and ID in the same place in memory
+ */
 struct ASN_ASNID_PAIR {
 	ASN asn;
 	ASN_ID id;
@@ -78,13 +84,16 @@ protected:
 	/**
 	 * Every realtionship has a priority, this stores the cost of moving from ASN1(first element of the pair) to ASN2(second element of the pair)
 	 * Used during seeding to lookup the relationship priority between two ASes on the path
+     *
+     * NOTE: Even if stub removal is enabled, the relationship priority between the provider and stub will still be listed here
 	*/
 	std::map<std::pair<ASN, ASN>, uint8_t> relationshipPriority;
 
-	//Do not move or append to these lists after initialization!!!
-	//TODO: could replace with a custom allocator and specific data structure for rank iteration and random access
+    // ASes are not stored individually. An "AS" is just an index in these structures
+    // If stubs are excluded, then they will not have an ID or any memory allocated to them
 	std::vector<PropagationPolicy*> idToPolicy;
 
+    // Each rank contains the IDs of the ASes in that rank (rank 0 (index 0) is the lowest propagation rank)
 	std::vector<std::vector<ASN_ID>> rankToIDs;
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToProviderIDs;
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToPeerIDs;
@@ -93,6 +102,7 @@ protected:
 
 	std::vector<AnnouncementStaticData> announcementStaticData;
 
+    // The only evidence of stubs will be here. NOTE: This structure will be populated regardless of the stubRemoval flag
     bool stubRemoval;
     std::unordered_map<ASN, ASN_ID> stubASNToProviderID;
 
@@ -101,45 +111,62 @@ protected:
 public:
 
 	/**
-	 * Constructs a graph from the given CAIDA relationship dataset. This will also do the one-time allocation of all local ribs and static data.
+	 * Constructs a graph from the given CAIDA relationship dataset.
+     * Relationships between ASes will be constructed and they will be organized by their propagation_rank
+     * This will *not* allocate local ribs, since the announcements are not given here
+     * 
+     * "Stub removal" is an optimization technique. ASes that have only a single provider (and no other relationships) are stubs.
+     * The local rib of a stub is merely the same as its provider (since it has no other choices)
+     * Thus, rather than allocate space for their local ribs and propagate the announcements to them, we may reconstruct them when writing results
+     * Stubs make up about 36% of the graph, thus removing them will save a significant amount of memory
+     *
+     * NOTE: As of writing, stub removal will not work with origin-only seeding when a stub is also an origin
+     * TODO: ^ fix that
 	 * 
-	 * @param relationshipsCSV 
-	 * @param maximumPrefixBlockID 
-	 * @param maximumSeededAnnouncements 
+	 * @param relationshipsCSV -> File path to the CAIDA Relationships tsv
+     * @param stubRemoval -> Whether to enable stub removal optimization
 	*/
-	Graph(const std::string &relationshipsFilePath, bool stubRemoval);
+	Graph(const std::string &relationshipsFilePath, const bool stubRemoval);
 	~Graph();
 
     /**
      * Tests if the two graphs are equivalent. "Equivalent" meaning that the local ribs have the same AS paths.
      * The seeding flag is ignored. Used for test cases
+     *
+     * @param graph -> The other graph to compare to
      */
-    bool CompareTo(Graph &graph);
+    bool CompareTo(const Graph &graph);
 
 	/**
-	 * Resets all announcements to an initial state. No memory is deallocated.
+	 * Resets all announcements to their default state. No memory is deallocated.
 	*/
 	void ResetAllAnnouncements();
 
 	/**
-	 * Resets all announcements, that are not seeded, to an initial state. No memory is deallocated
+	 * Resets all announcements, that are not seeded, to their default state. No memory is deallocated
 	*/
 	void ResetAllNonSeededAnnouncements();
 
 	/**
-	 * Given a dataset of MRT announcements, and the method of seeding (configuration), this seeds the real-world data into the graph.
+	 * Given a dataset of MRT announcements, and the method of seeding, this seeds the real-world data into the graph.
 	 * All announcements inserted during this stage will be marked as seeded. And will not be replaced during propagation.
+     * 
+     * *********
+     * NOTE: This will allocate the local ribs. Be aware of how large the dataset is and how much RAM it will use
+     * *********
 	 * 
 	 * Special Cases:
 	 *  - If an AS on the path does not exist in the graph (the CAIDA relationships), then that AS is skipped (while preserving path length).
 	 *    This missing AS will thus not show up during traceback or the final results. Such improvement may be left in a future paper.
 	 *  - Prepending will inflate the path length for the next unique AS on the path. Only the first occurence of the prepended ASN is seeded.
 	 *  - The origin will be seeded to show it recieved from itself (marks the end of the path during traceback)
+     *  - If stub removal was enabled, the provider to that stub will still show that it recieved from the stub, if such an announcement was in the mrt dataset
+     *     (this means during traceback, be aware that the revieved_from_asn may be a stub ASN not allocated in the graph)
 	 * 
-	 * @param filePathAnnouncements 
-	 * @param config 
+	 * @param filePathAnnouncements -> File path to the mrt announcements tsv
+	 * @param config -> Configuration for how announcements ought to be seeded and tiebroken in the graph
 	*/
-	void SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration& config, size_t maximumPrefixBlockID);
+	void SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration& config);
 
 	/**
 	 * Using Gao Rexford rules, this will propagate the announcements throughout the graph. 
@@ -152,22 +179,30 @@ public:
 
 	/**
 	 * Given a starting ASN and a prefixID, this will traceback the AS_PATH of that announcement.
+     * The returned AS_PATH will have the origin at the end of the list, and the starting ASN will be at the beginning
+     *
+     * Also note that this is the control-plane traceback. This method will not look at the netmask or follow the most specific prefix in the AS.
+     * Rather, it will just dumbly follow where this exact listed prefix goes
 	 * 
-	 * @param startingASN 
-	 * @param prefixBlockID 
-	 * @param as_path -> the list to add to containing the traceback of ASNS
+     * @param as_path -> the list to add to containing the traceback of ASNS (this will not be cleared. Only appended to)
+	 * @param startingASN  -> ASN to start at and trace back to the origin
+	 * @param prefixBlockID -> ID of the prefix to trace
 	*/
 	void Traceback(std::vector<ASN> &as_path, const ASN startingASN, const uint32_t prefixBlockID);
 
 	/**
-	 * Write the local ribs of the provided ASNs to the CSV file at the given location.
-	 * If no ASNs are specified, all local ribs are dumped to the file. 
+     * Write the trace of every prefix in the provided ASes to a CSV file
+	 * **WARNING** If no ASNs are specified, all local ribs are dumped to the file. 
 	 *  - If this is the case, prepare your hard drive...
+     *  - I'm serious. The amount of data this generates is absurd. Be *very* careful about how many RIBs are dumped (and how big they are)
+     *  - For reference, about 4000 unique prefixes with 70,000 ASes will generate about 9GB of traces
 	 * 
-	 * @param resultsFilePath 
-	 * @param localRibsToDump 
+	 * @param resultsFilePath -> Path to the results file
+	 * @param localRibsToDump -> ASNs of ASes to trace the route for all prefixes in the local rib
 	*/
 	void GenerateTracebackResultsCSV(const std::string& resultsFilePath, std::vector<ASN> localRibsToDump);
+
+    // **** Getters **** //
 
 	inline ASN GetASN(const ASN_ID id) const { return idToASN[id]; }
 
@@ -175,7 +210,21 @@ public:
 		return localRibs.GetAnnouncement(asnID, prefixBlockID);
 	}
 
-	inline const AnnouncementStaticData& GetStaticData(const size_t& index) const {
+    /**
+     * Returns a const reference to the announcement that cannot be modified
+     */
+    inline const AnnouncementCachedData& GetCachedData_ReadOnly(const ASN_ID& asnID, const uint32_t& prefixBlockID) const {
+		return localRibs.GetAnnouncement_ReadOnly(asnID, prefixBlockID);
+	}
+
+	inline AnnouncementStaticData& GetStaticData(const size_t& index) {
+		return announcementStaticData[index];
+	}
+
+    /**
+     * Returns a const reference to the static data that cannot be modified
+     */
+	inline const AnnouncementStaticData& GetStaticData_ReadOnly(const size_t& index) const {
 		return announcementStaticData[index];
 	}
 
@@ -183,8 +232,8 @@ public:
 		return idToPolicy[asnID];
 	}
 
-    inline size_t GetNumASes() { return localRibs.GetNumASes(); }
-    inline size_t GetNumPrefixes() { return localRibs.GetNumPrefixes(); }
+    inline size_t GetNumASes() const { return localRibs.GetNumASes(); }
+    inline size_t GetNumPrefixes() const { return localRibs.GetNumPrefixes(); }
 
 protected:
 	/**

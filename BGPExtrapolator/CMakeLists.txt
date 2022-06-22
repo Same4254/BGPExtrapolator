@@ -6,6 +6,9 @@ cmake_minimum_required (VERSION 3.8)
 include_directories(${PROJECT_SOURCE_DIR}/BGPExtrapolator/include)
 add_executable (BGPExtrapolator "src/Main.cpp"   "src/Util.cpp" "src/Graphs/Graph.cpp")
 
+#set(CMAKE_CXX_FLAGS "-fprofile-generate")
+#set(CMAKE_CXX_FLAGS "-fprofile-use=*.gcda")
+
 #target_link_libraries(BGPExtrapolator PUBLIC rapidcsv PUBLIC Boost::container PUBLIC Boost::config)
 
 #if ("${CMAKE_SYSTEM_NAME}" MATCHES "Windows")

@@ -14,7 +14,7 @@ struct RelationshipInfo {
     std::vector<ASN> peers, customers, providers, stubs;
 };
 
-Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubRemoval(stubRemoval) {
+Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) : stubRemoval(stubRemoval) {
     rapidcsv::Document relationshipsCSV(relationshipsFilePath, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
     std::vector<RelationshipInfo> relationshipInfo;
 
@@ -44,12 +44,8 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
         info.customers = Util::parseASNList(relationshipsCSV.GetCell<std::string>("customers", rowIndex));
         info.stubs = Util::parseASNList(relationshipsCSV.GetCell<std::string>("stubs", rowIndex));
 
-        //auto stubs = Util::parseASNList(relationshipsCSV.GetCell<std::string>("stubs", rowIndex));
-        //for (auto stubASN : stubs) {
-        //    info.stubASNToProviderASN.insert(std::make_pair(stubASN, info.asn));
-        //}
-
-        //PERF_TODO: These can be optimized (redundant inserts)
+        // write down the priorities to be lookedup later during seeding
+        //PERF_TODO: These can be optimized (redundant inserts). Eh? Is it worth it?
         for (auto providerASN : info.providers) {
             relationshipPriority.insert({ std::make_pair(info.asn, providerASN), RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER });
             relationshipPriority.insert({ std::make_pair(providerASN, info.asn), RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER });
@@ -67,7 +63,6 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
 
         relationshipInfo.push_back(info);
 
-        //idToPolicy[nextID] = new BGPPolicy<>(info.asn, info.asnID);
         idToPolicy.push_back(new BGPPolicy(info.asn, info.asnID));
 
         nextID++;
@@ -79,6 +74,8 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
     asIDToCustomerIDs.resize(relationshipInfo.size());
     idToASN.resize(relationshipInfo.size());
 
+    // Only allocates a slot. Does not allocate entire local rib
+    // Essentially giving the number of columns, but not filling in any rows
     localRibs.SetNumASes(relationshipInfo.size());
     
     //***** Relationship Parsing *****//
@@ -93,6 +90,7 @@ Graph::Graph(const std::string &relationshipsFilePath, bool stubRemoval) : stubR
 
         rankToIDs[relationshipInfo[i].rank].push_back(info.asnID);
 
+        // Write down the ASN and ID of each AS for each relationship
         for (ASN provider : info.providers) {
             auto idSearch = asnToID.find(provider);
             if (idSearch == asnToID.end())
@@ -128,14 +126,14 @@ Graph::~Graph() {
         delete policy;
 }
 
-bool Graph::CompareTo(Graph &graph2) {
+bool Graph::CompareTo(const Graph &graph2) {
     if(GetNumASes() != graph2.GetNumASes() || GetNumPrefixes() != graph2.GetNumPrefixes())
         return false;
     
     for (ASN_ID asn_id = 0; asn_id < GetNumASes(); asn_id++) {
     for (size_t prefix_id = 0; prefix_id < GetNumPrefixes(); prefix_id++) {
         AnnouncementCachedData &ann1 = GetCachedData(asn_id, prefix_id);
-        AnnouncementCachedData &ann2 = graph2.GetCachedData(asn_id, prefix_id);
+        const AnnouncementCachedData &ann2 = graph2.GetCachedData_ReadOnly(asn_id, prefix_id);
 
         if (ann1.pathLength != ann2.pathLength)
             return false;
@@ -146,8 +144,8 @@ bool Graph::CompareTo(Graph &graph2) {
         if (ann1.recievedFromASN != ann2.recievedFromASN || ann1.relationship != ann2.relationship)
             return false;
 
-        const AnnouncementStaticData &staticData1 = GetStaticData(ann1.staticDataIndex);
-        const AnnouncementStaticData &staticData2 = graph2.GetStaticData(ann2.staticDataIndex);
+        const AnnouncementStaticData &staticData1 = GetStaticData_ReadOnly(ann1.staticDataIndex);
+        const AnnouncementStaticData &staticData2 = graph2.GetStaticData_ReadOnly(ann2.staticDataIndex);
 
         if (staticData1.timestamp != staticData2.timestamp || staticData1.origin != staticData2.origin || staticData1.prefixString != staticData2.prefixString)
             return false;
@@ -158,36 +156,29 @@ bool Graph::CompareTo(Graph &graph2) {
 
 void Graph::ResetAllAnnouncements() {
     for (int i = 0; i < GetNumASes(); i++) {
-        for (int j = 0; j < GetNumPrefixes(); j++) {
-            AnnouncementCachedData& ann = GetCachedData(i, j);
-            ann.pathLength = 0;
-            ann.recievedFromASN = 0;
-            ann.seeded = 0;
-            //ann.staticData = nullptr;
-            ann.staticDataIndex = 0;
-        }
-    }
+    for (int j = 0; j < GetNumPrefixes(); j++) {
+        AnnouncementCachedData& ann = GetCachedData(i, j);
+        ann.SetDefaultState();
+    }}
 }
 
 void Graph::ResetAllNonSeededAnnouncements() {
     for (int i = 0; i < GetNumASes(); i++) {
-        for (int j = 0; j < GetNumPrefixes(); j++) {
-            AnnouncementCachedData& ann = GetCachedData(i, j);
+    for (int j = 0; j < GetNumPrefixes(); j++) {
+        AnnouncementCachedData& ann = GetCachedData(i, j);
+        if (ann.seeded)
+            continue;
 
-            if (ann.seeded)
-                continue;
-
-            ann.SetDefaultState();
-        }
-    }
+        ann.SetDefaultState();
+    }}
 }
 
-void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration &config, size_t maximumPrefixBlockID) {
+void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingConfiguration &config) {
     rapidcsv::Document announcements_csv(filePathAnnouncements, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
 
     // Allocate memory for the local ribs and the static announcement data
     announcementStaticData.resize(announcements_csv.GetRowCount());   
-    localRibs.SetNumPrefixes(maximumPrefixBlockID + 1);
+    localRibs.SetNumPrefixes(announcements_csv.GetRowCount()); // poor-man estimate of the number of unique prefixes
 
     ResetAllAnnouncements();
 
@@ -213,7 +204,7 @@ void Graph::SeedBlock(const std::string& filePathAnnouncements, const SeedingCon
 }
 
 //TODO Recieved_from needs to be much more robust to the absence of known ASNs in the graph.
-//TODO Traceback may result in a cycle. This should be checked for
+//TODO: Needs error detection and reporting.
 void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, const Prefix& prefix, const std::string& prefixString, int64_t timestamp, const SeedingConfiguration &config) {
     if (asPath.size() == 0)
         return;
@@ -390,6 +381,8 @@ void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const ui
     }
 }
 
+// ************************ FILE I/O ************************ //
+ 
 /**
  * The plain C++ file buffering wasn't performing well in this case.
  * So here is a basic file buffer that lets you write into a buffer and flushes when it gets too full
@@ -398,7 +391,7 @@ void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const ui
  * If we go over the threshold, flush to the actual file.
  */
 class FileBuffer {
-public:
+private:
     static const int BUFFER_CAPACITY = 10000;
     static const int BUFFER_FLUSH_THRESHOLD = 1000;
 
@@ -407,6 +400,7 @@ public:
 
     FILE *f;
 
+public:
     FileBuffer(FILE *f) : bufferLength(0), f(f) {
 
     }

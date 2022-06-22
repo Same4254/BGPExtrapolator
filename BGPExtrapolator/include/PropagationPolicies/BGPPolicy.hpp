@@ -104,8 +104,8 @@ public:
                 return true;
             }
             else if (sendingAnnouncement.pathLength + 1 == currentAnnouncement.pathLength) {
-                int64_t sendingTimestamp = graph.GetStaticData(sendingAnnouncement.staticDataIndex).timestamp;
-                int64_t currentTimestamp = graph.GetStaticData(currentAnnouncement.staticDataIndex).timestamp;
+                int64_t sendingTimestamp = graph.GetStaticData_ReadOnly(sendingAnnouncement.staticDataIndex).timestamp;
+                int64_t currentTimestamp = graph.GetStaticData_ReadOnly(currentAnnouncement.staticDataIndex).timestamp;
 
                 if (sendingTimestamp > currentTimestamp) {
                     return true;

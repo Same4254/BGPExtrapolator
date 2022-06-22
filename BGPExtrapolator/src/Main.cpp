@@ -6,21 +6,21 @@
 bool RunTestCases(bool stubRemoval) {
     bool testCasesPassed = true;
     std::string testCaseFolder = "TestCases/";
-    std::vector<std::string> testCases = {"BGP_Prop", "BGP_Prop_Stub", "Path_len_Preference", "Relation_Preference", "Tiebrake_Preference" };
+    std::vector<std::string> testCases = {"BGP_Prop", "BGP_Prop_StubOrigin", "Path_len_Preference", "Relation_Preference", "Tiebrake_Preference" };
     for (auto &s : testCases) {
         //rapidcsv::Document d("TestCases/" + s + "-Relationships.txt", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams('\t'));
-        Graph g("TestCases/" + s + "-Relationships.txt", stubRemoval);
+        Graph g("TestCases/" + s + "-Relationships.tsv", stubRemoval);
 
         SeedingConfiguration config;
         config.originOnly = false;
         config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
         config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
 
-        g.SeedBlock("TestCases/" + s + "-Announcements.txt", config, 1);
+        g.SeedBlock("TestCases/" + s + "-Announcements.tsv", config);
 
         g.Propagate();
 
-        g.GenerateTracebackResultsCSV("TestCases/" + s + "-Results.txt", std::vector<uint32_t>());
+        g.GenerateTracebackResultsCSV("TestCases/" + s + "-Results" + (stubRemoval ? "_StubsRemoval" : "") + ".tsv", std::vector<uint32_t>());
         
         // Recreate a new graph with all of the local ribs (include the stubs if they were removed)
         //Graph test("TestCases/" + s + "-Relationships.txt", false);
@@ -39,14 +39,32 @@ bool RunTestCases(bool stubRemoval) {
     return testCasesPassed;
 }
 
+/**
+ * TODOs:
+ *   - Multihome Policies
+ *   - Code Cleanup and documentation
+ *   - I broke the test cases again :)
+ *   - Error detection in the mrt data / logging of some kind
+ *   - Input config file
+ *   - Data-Plane Traces
+ *   - Program memory dump (more compact output format without traces)
+ *
+ *   - Stub removal optimization with origin_only propagation will break
+ *
+ * PERF_TODOs:
+ *   - The biggest question at the moment is whether transposed local ribs will be faster for much larger datasets
+ *   - Look around for other compiler flags that may help
+ *   - Profile-Guided Optimization
+ *   - Announcements currently store receieved from ASN, traceback requires a conversion from ASN to ID
+ *      - If traceback takes longer, this can change to be an ID
+ *      - However, the neighbor recieved from ID would have to lookup the ASN if doing an ASN comparison
+ */
 int main() {
-    //RunTestCases(true);
-    //RunTestCases(false);
-    /*if (RunTestCases(true) && RunTestCases(false)) {
+    if (RunTestCases(true) && RunTestCases(false)) {
         std::cout << "Test Cases Passed!" << std::endl;
     } else {
         std::cout << "Test Cases Failed" << std::endl;
-    }*/
+    }
 
     Graph graphWithStubs("TestCases/RealData-Relationships.txt", true);
 
@@ -55,7 +73,7 @@ int main() {
     config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
     config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
 
-    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.txt", config, 4100);
+    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.txt", config);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     
@@ -69,7 +87,7 @@ int main() {
 
     std::cout << "Writing Results..." << std::endl;
     t1 = std::chrono::high_resolution_clock::now();
-    graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.csv", {});
+    //graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.csv", {});
     t2 = std::chrono::high_resolution_clock::now();
 
     time = t2 - t1;

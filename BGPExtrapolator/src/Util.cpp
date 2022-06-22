@@ -20,7 +20,6 @@ std::vector<ASN> Util::parseASNList(const std::string& asPathString) {
     return asPath;
 }
 
-
 bool Util::ASPathContainCycle(const std::vector<ASN> &asPath) {
     bool cycle = false;
 

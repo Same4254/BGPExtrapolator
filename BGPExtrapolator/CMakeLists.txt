@@ -4,7 +4,7 @@
 cmake_minimum_required (VERSION 3.8)
 
 include_directories(${PROJECT_SOURCE_DIR}/BGPExtrapolator/include)
-add_executable (BGPExtrapolator "src/Main.cpp"   "src/Util.cpp" "src/Graphs/Graph.cpp")
+add_executable (BGPExtrapolator "src/Main.cpp"   "src/Util.cpp" "src/Graphs/Graph.cpp" "src/Testing.cpp")
 
 #set(CMAKE_CXX_FLAGS "-fprofile-generate")
 #set(CMAKE_CXX_FLAGS "-fprofile-use=*.gcda")

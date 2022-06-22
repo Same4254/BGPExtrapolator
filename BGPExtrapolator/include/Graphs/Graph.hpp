@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <map>
 
+#include <limits>
 #include <rapidcsv.h>
 
 #include "Utils.hpp"

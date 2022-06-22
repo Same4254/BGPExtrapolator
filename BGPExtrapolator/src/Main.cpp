@@ -1,43 +1,8 @@
 ﻿#include "PropagationPolicies/BGPPolicy.hpp"
 #include "Graphs/Graph.hpp"
+#include "Testing.hpp"
 
 #include <chrono>
-
-bool RunTestCases(bool stubRemoval) {
-    bool testCasesPassed = true;
-    std::string testCaseFolder = "TestCases/";
-    std::vector<std::string> testCases = {"BGP_Prop", "BGP_Prop_StubOrigin", "Path_len_Preference", "Relation_Preference", "Tiebrake_Preference" };
-    for (auto &s : testCases) {
-        //rapidcsv::Document d("TestCases/" + s + "-Relationships.txt", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams('\t'));
-        Graph g("TestCases/" + s + "-Relationships.tsv", stubRemoval);
-
-        SeedingConfiguration config;
-        config.originOnly = false;
-        config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
-        config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
-
-        g.SeedBlock("TestCases/" + s + "-Announcements.tsv", config);
-
-        g.Propagate();
-
-        g.GenerateTracebackResultsCSV("TestCases/" + s + "-Results" + (stubRemoval ? "_StubsRemoval" : "") + ".tsv", std::vector<uint32_t>());
-        
-        // Recreate a new graph with all of the local ribs (include the stubs if they were removed)
-        //Graph test("TestCases/" + s + "-Relationships.txt", false);
-        //test.SeedBlock("TestCases/" + s + "-Results.txt", config, 1);
-
-        ////rapidcsv::Document d2("TestCases/" + s + "-Relationships.txt", rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams('\t'));
-        //Graph g2("TestCases/" + s + "-Relationships.txt", false);
-        //g2.SeedBlock("TestCases/" + s + "-Truth.txt", config, 1);
-
-        //if(!test.CompareTo(g2)) {
-        //    std::cout << "Test Case " + s + " Failed!" << std::endl;
-        //    testCasesPassed = false;
-        //}
-    }
-
-    return testCasesPassed;
-}
 
 /**
  * TODOs:
@@ -60,12 +25,13 @@ bool RunTestCases(bool stubRemoval) {
  *      - However, the neighbor recieved from ID would have to lookup the ASN if doing an ASN comparison
  */
 int main() {
-    if (RunTestCases(true) && RunTestCases(false)) {
+    if (RunTestCases()) {
         std::cout << "Test Cases Passed!" << std::endl;
     } else {
         std::cout << "Test Cases Failed" << std::endl;
     }
 
+    /*
     Graph graphWithStubs("TestCases/RealData-Relationships.txt", true);
 
     SeedingConfiguration config;
@@ -109,6 +75,6 @@ int main() {
     //} else {
     //    std::cout << "Graphs are not the same!" << std::endl;
     //}
-
+    */
     return 0;
 }

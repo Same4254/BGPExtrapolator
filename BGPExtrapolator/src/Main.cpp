@@ -8,7 +8,6 @@
  * TODOs:
  *   - Multihome Policies
  *   - Code Cleanup and documentation
- *   - I broke the test cases again :)
  *   - Error detection in the mrt data / logging of some kind
  *   - Input config file
  *   - Data-Plane Traces
@@ -29,17 +28,17 @@ int main() {
         std::cout << "Test Cases Passed!" << std::endl;
     } else {
         std::cout << "Test Cases Failed" << std::endl;
+        return -1;
     }
-
-    /*
-    Graph graphWithStubs("TestCases/RealData-Relationships.txt", true);
 
     SeedingConfiguration config;
     config.originOnly = false;
     config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
     config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
 
-    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.txt", config);
+    Graph graphWithStubs("TestCases/RealData-Relationships.tsv", true);
+
+    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
 
     auto t1 = std::chrono::high_resolution_clock::now();
     
@@ -53,28 +52,11 @@ int main() {
 
     std::cout << "Writing Results..." << std::endl;
     t1 = std::chrono::high_resolution_clock::now();
-    //graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.csv", {});
+    graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.tsv", {});
     t2 = std::chrono::high_resolution_clock::now();
 
     time = t2 - t1;
     std::cout << "Result Written! " << time.count() << std::endl;
 
-    //Graph graphNoStubs("TestCases/RealData-Relationships.txt", false);
-
-    //std::cout << "Seeding graph with stubs!" << std::endl;
-    //graphWithStubs.SeedBlock("TestCases/RealData-Announcements.txt", config, 4100);
-    //std::cout << "Propagating graph with stubs!" << std::endl;
-    //graphWithStubs.Propagate();
-
-    //Graph graphTest("TestCases/RealData-Relationships.txt", false);
-    //std::cout << "Seeding Test Graph!" << std::endl;
-    //graphTest.SeedBlock("TestCases/RealResults-Stubs.csv", config, 4100);
-
-    //if (graphTest.CompareTo(graphWithStubs)) {
-    //    std::cout << "Graphs are the same!" << std::endl;
-    //} else {
-    //    std::cout << "Graphs are not the same!" << std::endl;
-    //}
-    */
-    return 0;
+    return 0; 
 }

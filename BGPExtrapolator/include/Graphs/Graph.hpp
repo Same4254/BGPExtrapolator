@@ -98,14 +98,13 @@ protected:
 	std::vector<std::vector<ASN_ID>> rankToIDs;
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToProviderIDs;
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToPeerIDs;
-
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToCustomerIDs;
-
-	std::vector<AnnouncementStaticData> announcementStaticData;
 
     // The only evidence of stubs will be here. NOTE: This structure will be populated regardless of the stubRemoval flag
     bool stubRemoval;
     std::unordered_map<ASN, ASN_ID> stubASNToProviderID;
+
+	std::vector<AnnouncementStaticData> announcementStaticData;
 
     LocalRibs localRibs;
 
@@ -128,15 +127,25 @@ public:
      * @param stubRemoval -> Whether to enable stub removal optimization
 	*/
 	Graph(const std::string &relationshipsFilePath, const bool stubRemoval);
-	~Graph();
+    
+    /**
+     * Constructs a graph from the previous state it was in
+     * This state includes *everything* about the program
+     *
+     * This *will* allocate local ribs.
+     */
+    Graph(const std::string &stateFilePath);
 
     /**
-     * Tests if the two graphs are equivalent. "Equivalent" meaning that the local ribs have the same AS paths.
-     * The seeding flag is ignored. Used for test cases
+     * Dumps the state of the program into a file.
+     * This could be used to resume computation at a later date, or before tracebacks at a later time
+     * The benefit of is that dumping the state of the program is much faster and smaller than dumping *all* of the traces
      *
-     * @param graph -> The other graph to compare to
+     * The program state dump will be no longer than the amount of RAM the program uses after completed seeding
      */
-    bool CompareTo(const Graph &graph);
+    void DumpState(const std::string &stateFilePath);
+
+	~Graph();
 
 	/**
 	 * Resets all announcements to their default state. No memory is deallocated.
@@ -189,7 +198,7 @@ public:
 	 * @param startingASN  -> ASN to start at and trace back to the origin
 	 * @param prefixBlockID -> ID of the prefix to trace
 	*/
-	void Traceback(std::vector<ASN> &as_path, const ASN startingASN, const uint32_t prefixBlockID);
+	void Traceback(std::vector<ASN> &as_path, const ASN startingASN, const uint32_t prefixBlockID) const;
 
 	/**
      * Write the trace of every prefix in the provided ASes to a CSV file
@@ -205,7 +214,12 @@ public:
 
     // **** Getters **** //
 
+    inline bool IsStub(const ASN asn) const { return stubASNToProviderID.find(asn) != stubASNToProviderID.end(); }
+    inline ASN_ID GetProviderIDOfStubASN(const ASN stubASN) const { return stubASNToProviderID.at(stubASN); }
+
+    inline bool ContainsASN(const ASN asn) const { return asnToID.find(asn) != asnToID.end(); }
 	inline ASN GetASN(const ASN_ID id) const { return idToASN[id]; }
+    inline ASN_ID GetASNID(const ASN asn) const { return asnToID.at(asn); }
 
 	inline AnnouncementCachedData& GetCachedData(const ASN_ID& asnID, const uint32_t& prefixBlockID) {
 		return localRibs.GetAnnouncement(asnID, prefixBlockID);

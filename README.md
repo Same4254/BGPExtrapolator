@@ -21,9 +21,10 @@ Once the repository is cloned, use traditional CMake building commands in the to
 ./> cd BGPExtrapolator
 ./BGPExtrapolator/> mkdir build
 ./BGPExtrapolator/> cd build/
-./BGPExtrapolator/build/> cmake ..
+./BGPExtrapolator/build/> cmake -D CMAKE_BUILD_TYPE=RelWithDebInfo ..
 ./BGPExtrapolator/build/> make
-./BGPExtrapolator/build/> ./BGPExtrapolator/BGPExtrapolator <any command line arguments here> 
+./BGPExtrapolator/build/> cd ./BGPExtrapolator
+./BGPExtrapolator/build/BGPExtrapolator> ./BGPExtrapolator <any command line arguments here> 
 ```
 
 The first build of the project will be longer than subsequent builds because it will download dependencies and build them as well.

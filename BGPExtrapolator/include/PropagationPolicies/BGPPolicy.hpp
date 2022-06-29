@@ -15,7 +15,8 @@ protected:
             ASN_ID neighborID = neighbor.id;
             ASN neighborASN = neighbor.asn;
 
-            for (uint32_t i = 0; i < graph.GetNumPrefixes(); i++) {
+            const auto numPrefixes = graph.GetNumPrefixes();
+            for (uint32_t i = 0; i < numPrefixes; i++) {
                 AnnouncementCachedData& currentAnnouncement = graph.GetCachedData(asnID, i);
                 AnnouncementCachedData& sendingAnnouncement = graph.GetCachedData(neighborID, i);
 

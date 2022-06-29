@@ -11,7 +11,6 @@
  *   - Error detection in the mrt data / logging of some kind
  *   - Input config file
  *   - Data-Plane Traces
- *   - Program memory dump (more compact output format without traces)
  *
  *   - Stub removal optimization with origin_only propagation will break
  *
@@ -36,27 +35,55 @@ int main() {
     config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
     config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
 
-    Graph graphWithStubs("TestCases/RealData-Relationships.tsv", true);
+    Graph graphWithStubs("TestCases/RealData-Relationships.tsv", false);
 
-    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
+    std::cout << "Seeding!" << std::endl;
 
     auto t1 = std::chrono::high_resolution_clock::now();
+    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
+    auto t2 = std::chrono::high_resolution_clock::now();
+
+    auto time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+    std::cout << "Seeding Time: " << time.count() << std::endl;
+
+    t1 = std::chrono::high_resolution_clock::now();
     
     graphWithStubs.Propagate();
 
-    auto t2 = std::chrono::high_resolution_clock::now();
+    t2 = std::chrono::high_resolution_clock::now();
 
-    std::chrono::duration<float> time = t2 - t1;
+    time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
 
     std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
 
-    std::cout << "Writing Results..." << std::endl;
+    //std::cout << "Writing Results..." << std::endl;
+    //t1 = std::chrono::high_resolution_clock::now();
+    //graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.tsv", {});
+    //t2 = std::chrono::high_resolution_clock::now();
+
+    //time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);   
+    //std::cout << "Result Written! " << time.count() << std::endl;
+
+    Graph graphWithoutStubs("TestCases/RealData-Relationships.tsv", true);
+
     t1 = std::chrono::high_resolution_clock::now();
-    graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.tsv", {});
+    graphWithoutStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
     t2 = std::chrono::high_resolution_clock::now();
 
-    time = t2 - t1;
-    std::cout << "Result Written! " << time.count() << std::endl;
+    time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+    std::cout << "Seeding Time: " << time.count() << std::endl;
+
+    t1 = std::chrono::high_resolution_clock::now();
+    
+    graphWithoutStubs.Propagate();
+
+    t2 = std::chrono::high_resolution_clock::now();
+
+    time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+
+    std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
+
+    std::cout << CompareRibs(graphWithStubs, graphWithStubs) << std::endl;
 
     return 0; 
 }

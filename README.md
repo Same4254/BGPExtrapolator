@@ -33,7 +33,7 @@ The first build of the project will be longer than subsequent builds because it 
 
 The executable takes a command line argument of the file path to the json launch config file. 
 ```
-/BGPExtrapolator/build/BGPExtrapolator> ./BGPExtrapolator --config <path to json launch file>
+./BGPExtrapolator/build/BGPExtrapolator> ./BGPExtrapolator --config <path to json launch file>
 ```
 
 The launch file includes all of the options on how to run the extrapolator and where to put the results. Here is an example launch file that is included next to the executable:

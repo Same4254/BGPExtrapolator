@@ -28,3 +28,36 @@ Once the repository is cloned, use traditional CMake building commands in the to
 ```
 
 The first build of the project will be longer than subsequent builds because it will download dependencies and build them as well.
+
+## Usage
+
+The executable takes a command line argument of the file path to the json launch config file. 
+```
+/BGPExtrapolator/build/BGPExtrapolator> ./BGPExtrapolator --config <path to json launch file>
+```
+
+The launch file includes all of the options on how to run the extrapolator and where to put the results. Here is an example launch file that is included next to the executable:
+```
+{
+    "Relationships": "./TestCases/RealData-Relationships.tsv",
+    "Output": "./TestCases/RealData-Results.tsv",
+    "Announcements": "./TestCases/RealData-Announcements.tsv",
+
+    // NOTE: Do *NOT* use stub removal and origin only at the same time
+
+    // Options: true, false. Default: false
+    "Stub_Removal": false,
+
+    // Options: true, false. Default: false
+    "Origin_Only": false ,
+
+    // Options: Prefer_Lowest_ASN, Random. Default: Prefer_Lowest_ASN
+    "Tiebraking_Method": "Prefer_Lowest_ASN",
+
+    // Options: Prefer_Newer, Prefer_Older, Disabled. Default: Prefer_Newer
+    "Timestamp_Comparison_Method": "Prefer_Newer",
+
+    // Options: list of ASNs to dump tracebacks of for every prefix. Empty list will dump every AS. This is the default
+    "Control_Plane_Traceback_ASNs": []
+}
+```

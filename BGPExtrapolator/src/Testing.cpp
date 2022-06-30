@@ -68,36 +68,14 @@ bool CompareTraceOutputCSVs(const std::string &filePath1, const std::string &fil
     std::set<std::vector<ASN>> d1Paths, d2Paths;
 
     rapidcsv::Document d1(filePath1, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
-
-    int traceRowIndex = 0;
     for (int i = 0; i < d1.GetRowCount(); i++) {
-        std::string value = d1.GetCell<std::string>("index", i);
-        if(value == "static_index") {
-            traceRowIndex = i;
-            break;
-        }
-    }
-
-    rapidcsv::Document d1_trace(filePath1, rapidcsv::LabelParams(traceRowIndex + 1, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
-    for (int i = 0; i < d1_trace.GetRowCount(); i++) {
-        std::string as_path_string = d1_trace.GetCell<std::string>("as_path", i);
+        std::string as_path_string = d1.GetCell<std::string>("as_path", i);
         d1Paths.insert(Util::parseASNList(as_path_string));
     }
 
     rapidcsv::Document d2(filePath2, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
-
-    traceRowIndex = 0;
     for (int i = 0; i < d2.GetRowCount(); i++) {
-        std::string value = d2.GetCell<std::string>("index", i);
-        if(value == "static_index") {
-            traceRowIndex = i;
-            break;
-        }
-    }
-
-    rapidcsv::Document d2_trace(filePath2, rapidcsv::LabelParams(traceRowIndex + 1, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
-    for (int i = 0; i < d2_trace.GetRowCount(); i++) {
-        std::string as_path_string = d2_trace.GetCell<std::string>("as_path", i);
+        std::string as_path_string = d2.GetCell<std::string>("as_path", i);
         d2Paths.insert(Util::parseASNList(as_path_string));
     }
 

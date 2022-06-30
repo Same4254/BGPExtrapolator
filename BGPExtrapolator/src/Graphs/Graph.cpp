@@ -718,20 +718,11 @@ void Graph::GenerateTracebackResultsCSV(const std::string& resultsFilePath, std:
     }
 
     //First, dump the static info at the top of the file
-    fileBuffer.write("index\tprefix\torigin\ttimestamp\n");
-    for (size_t i = 0; i < announcementStaticData.size(); i++) {
-        const AnnouncementStaticData &data = announcementStaticData[i];
-        fileBuffer.write("%llu\t%s\t%i\t%lli\n", i, data.prefixString.c_str(), data.origin, data.timestamp);
-    }
+    fileBuffer.write("prefix\torigin\ttimestamp\tas_path\n");
     
-    fileBuffer.write("\n");
-    fileBuffer.write("static_index\tas_path\n");
-
     //Only dump the RIB of ASes we care about.
     std::vector<ASN> as_path;
     for (auto asn : localRibsToDump) {
-        auto t1 = std::chrono::high_resolution_clock::now();
-        
         // Determine the ID and ASN of the current AS.
         // Gets funky if we are interested in a stub, where we trace from the provider and then append to the path
         ASN_ID id;
@@ -763,7 +754,7 @@ void Graph::GenerateTracebackResultsCSV(const std::string& resultsFilePath, std:
             //***** Build String
             AnnouncementStaticData& staticData = announcementStaticData[ann.staticDataIndex];
 
-            fileBuffer.write("%lu\t{", ann.staticDataIndex);
+            fileBuffer.write("%s\t%i\t%lli\t{", staticData.prefixString.c_str(), staticData.origin, staticData.timestamp);
 
             if (stubASN >= 0) {
                 // If the AS path has the stub as the origin and we are dumping the local rib of the stub
@@ -785,11 +776,6 @@ void Graph::GenerateTracebackResultsCSV(const std::string& resultsFilePath, std:
             
             fileBuffer.write("}\n");
         }
-
-        auto t2 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<float> time = t2 - t1;
-
-        //std::cout << time.count() << "s" << std::endl;
     }
 
     fileBuffer.flush();

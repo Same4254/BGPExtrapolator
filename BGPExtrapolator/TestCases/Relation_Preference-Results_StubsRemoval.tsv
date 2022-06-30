@@ -1,9 +1,0 @@
-index	prefix	origin	timestamp
-0	1.2.0.0/16	777	1
-
-static_index	as_path
-0	{777}
-0	{4,777}
-0	{3,777}
-0	{2,777}
-0	{1,777}

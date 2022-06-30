@@ -19,6 +19,11 @@ add_executable (BGPExtrapolator "src/Main.cpp"   "src/Util.cpp" "src/Graphs/Grap
 add_custom_target(copy-test-cases ALL 
 		COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/BGPExtrapolator/TestCases ${PROJECT_BINARY_DIR}/BGPExtrapolator/TestCases
 		DEPENDS BGPExtrapolator) 
-target_link_libraries(BGPExtrapolator PUBLIC rapidcsv)
+
+add_custom_target(copy-default-launch ALL 
+        COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/BGPExtrapolator/DefaultLaunch.json ${PROJECT_BINARY_DIR}/BGPExtrapolator/DefaultLaunch.json
+		DEPENDS BGPExtrapolator) 
+
+target_link_libraries(BGPExtrapolator PUBLIC rapidcsv nlohmann_json::nlohmann_json)
 
 install(TARGETS BGPExtrapolator DESTINATION bin)

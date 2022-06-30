@@ -4,6 +4,14 @@
 
 #include <chrono>
 
+void Usage(bool incorrect) {
+    if (incorrect)
+        std::cout << "Incorrect usage, please see the correct options below." << std::endl;
+    std::cout << "Usage: " << std::endl;
+    std::cout << "  --help: prints the usage of the Extrapolator" << std::endl;
+    std::cout << "  --config <filename>: accepts a launch configuration and performs the experiment" << std::endl;
+}
+
 /**
  * TODOs:
  *   - Multihome Policies
@@ -22,68 +30,86 @@
  *      - If traceback takes longer, this can change to be an ID
  *      - However, the neighbor recieved from ID would have to lookup the ASN if doing an ASN comparison
  */
-int main() {
-    if (RunTestCases()) {
-        std::cout << "Test Cases Passed!" << std::endl;
+int main(int argc, char *argv[]) {
+    if (argc == 3) {
+        std::string command(argv[1]);
+        std::string value(argv[2]);
+        if (command == "--config") {
+            Graph::RunExperimentFromConfig(value);
+        } else {
+            Usage(true);
+        }
+    } else if (argc == 1) {
+        if (RunTestCases()) {
+            std::cout << "Test Cases Passed!" << std::endl;
+        } else {
+            std::cout << "Test Cases Failed" << std::endl;
+            return -1;
+        }
+
+        SeedingConfiguration config;
+        config.originOnly = false;
+        config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
+        config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
+
+        Graph graphWithStubs("TestCases/RealData-Relationships.tsv", false);
+
+        std::cout << "Seeding!" << std::endl;
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        graphWithStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
+        auto t2 = std::chrono::high_resolution_clock::now();
+
+        auto time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+        std::cout << "Seeding Time: " << time.count() << std::endl;
+
+        t1 = std::chrono::high_resolution_clock::now();
+        
+        graphWithStubs.Propagate();
+
+        t2 = std::chrono::high_resolution_clock::now();
+
+        time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+
+        std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
+
+        //std::cout << "Writing Results..." << std::endl;
+        //t1 = std::chrono::high_resolution_clock::now();
+        //graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.tsv", {});
+        //t2 = std::chrono::high_resolution_clock::now();
+
+        //time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);   
+        //std::cout << "Result Written! " << time.count() << std::endl;
+
+        Graph graphWithoutStubs("TestCases/RealData-Relationships.tsv", true);
+
+        t1 = std::chrono::high_resolution_clock::now();
+        graphWithoutStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
+        t2 = std::chrono::high_resolution_clock::now();
+
+        time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+        std::cout << "Seeding Time: " << time.count() << std::endl;
+
+        t1 = std::chrono::high_resolution_clock::now();
+        
+        graphWithoutStubs.Propagate();
+
+        t2 = std::chrono::high_resolution_clock::now();
+
+        time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
+
+        std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
+
+        std::cout << CompareRibs(graphWithStubs, graphWithStubs) << std::endl;
+    } else if(argc == 2) {
+        std::string command(argv[1]);
+        if (command == "--help")
+            Usage(false);
+        else
+            Usage(true);
     } else {
-        std::cout << "Test Cases Failed" << std::endl;
-        return -1;
+        Usage(true);
     }
-
-    SeedingConfiguration config;
-    config.originOnly = false;
-    config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
-    config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
-
-    Graph graphWithStubs("TestCases/RealData-Relationships.tsv", false);
-
-    std::cout << "Seeding!" << std::endl;
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    graphWithStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
-    auto t2 = std::chrono::high_resolution_clock::now();
-
-    auto time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
-    std::cout << "Seeding Time: " << time.count() << std::endl;
-
-    t1 = std::chrono::high_resolution_clock::now();
-    
-    graphWithStubs.Propagate();
-
-    t2 = std::chrono::high_resolution_clock::now();
-
-    time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
-
-    std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
-
-    //std::cout << "Writing Results..." << std::endl;
-    //t1 = std::chrono::high_resolution_clock::now();
-    //graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.tsv", {});
-    //t2 = std::chrono::high_resolution_clock::now();
-
-    //time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);   
-    //std::cout << "Result Written! " << time.count() << std::endl;
-
-    Graph graphWithoutStubs("TestCases/RealData-Relationships.tsv", true);
-
-    t1 = std::chrono::high_resolution_clock::now();
-    graphWithoutStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
-    t2 = std::chrono::high_resolution_clock::now();
-
-    time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
-    std::cout << "Seeding Time: " << time.count() << std::endl;
-
-    t1 = std::chrono::high_resolution_clock::now();
-    
-    graphWithoutStubs.Propagate();
-
-    t2 = std::chrono::high_resolution_clock::now();
-
-    time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
-
-    std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
-
-    std::cout << CompareRibs(graphWithStubs, graphWithStubs) << std::endl;
 
     return 0; 
 }

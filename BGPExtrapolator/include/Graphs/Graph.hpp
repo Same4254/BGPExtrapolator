@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <rapidcsv.h>
+#include <nlohmann/json.hpp>
 
 #include "Utils.hpp"
 #include "Announcement.hpp"
@@ -109,6 +110,7 @@ protected:
     LocalRibs localRibs;
 
 public:
+    static void RunExperimentFromConfig(const std::string &launchJSONPath);
 
 	/**
 	 * Constructs a graph from the given CAIDA relationship dataset.

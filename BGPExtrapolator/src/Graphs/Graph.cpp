@@ -56,6 +56,113 @@ public:
     }
 };
 
+void Graph::RunExperimentFromConfig(const std::string &launchJSONPath) {
+    std::ifstream launchFile(launchJSONPath);
+    nlohmann::json launchJSON = nlohmann::json::parse(launchFile, nullptr, true, true);
+
+    // File Locations
+    auto rel_search = launchJSON.find("Relationships");
+    if (rel_search == launchJSON.end()) {
+        std::cout << "Expected path to relationships TSV file!" << std::endl;
+        return;
+    }
+
+    auto output_search = launchJSON.find("Output");
+    if (output_search == launchJSON.end()) {
+        std::cout << "Expected path to output TSV file!" << std::endl;
+        return;
+    }
+
+    auto announcements_search = launchJSON.find("Announcements");
+    if (announcements_search == launchJSON.end()) {
+        std::cout << "Expected path to output TSV file!" << std::endl;
+        return;
+    }
+
+    std::string relationshipsFilePath = rel_search.value();
+    std::string outputFilePath = output_search.value();
+    std::string announcementsFilePath = announcements_search.value();
+
+    // Seeding Options
+    SeedingConfiguration config;
+
+    auto origin_only_search = launchJSON.find("Origin_Only");
+    if (origin_only_search == launchJSON.end()) {
+        config.originOnly = false;
+    } else {
+        if(!origin_only_search.value().is_boolean()) {
+            std::cout << "Expected boolean value for origin only!" << std::endl;
+            return;
+        }
+
+        config.originOnly = origin_only_search.value().get<bool>();
+    }
+
+    auto tiebraking_search = launchJSON.find("Tiebraking_Method");
+    if (tiebraking_search == launchJSON.end()) {
+        config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
+    } else {
+        std::string method = tiebraking_search.value();
+        if (method == "Prefer_Lowest_ASN") {
+            config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
+        } else if (method == "Random") {
+            config.tiebrakingMethod = TIEBRAKING_METHOD::RANDOM;
+        } else {
+            std::cout << "Unknown tiebraking method!" << std::endl;
+            return;
+        }
+    }
+
+    auto timestamp_search = launchJSON.find("Timestamp_Comparison_Method");
+    if (timestamp_search == launchJSON.end()) {
+        config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
+    } else {
+        std::string method = timestamp_search.value();
+        if (method == "Prefer_Newer") {
+            config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
+        } else if (method == "Prefer_Older") {
+            config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_OLDER;
+        } else if (method == "Disabled") {
+            config.timestampComparison = TIMESTAMP_COMPARISON::DISABLED;
+        } else {
+            std::cout << "Unknown Timestamp comparison method!" << std::endl;
+            return;
+        }
+    }
+
+    bool stubRemoval = false;
+    auto stubRemovalSearch = launchJSON.find("Stub_Removal");
+    if (stubRemovalSearch != launchJSON.end()) {
+        if (stubRemovalSearch.value().is_boolean()) {
+            stubRemoval = stubRemovalSearch.value().get<bool>();
+        } else {
+            std::cout << "Unknown value for stub removal" << std::endl;
+            return;
+        }
+    }
+    
+    std::vector<ASN> controlPlaneASNs;
+    auto control_plane_trace_ASNs_search = launchJSON.find("Control_Plane_Traceback_ASNs");
+    if (control_plane_trace_ASNs_search != launchJSON.end()) {
+        if (control_plane_trace_ASNs_search.value().is_array()) {
+            controlPlaneASNs = control_plane_trace_ASNs_search.value().get<std::vector<ASN>>();
+        } else {
+            std::cout << "Expected list of ASNs for control plane traceback!" << std::endl;
+            return;
+        }
+    }
+
+    for (auto asn : controlPlaneASNs) {
+        std::cout << asn << std::endl;
+    }
+    
+    launchFile.close();
+
+    Graph g(relationshipsFilePath, stubRemoval);
+    g.SeedBlock(announcementsFilePath, config);
+    g.GenerateTracebackResultsCSV(outputFilePath, controlPlaneASNs);
+}
+
 Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) : stubRemoval(stubRemoval) {
     rapidcsv::Document relationshipsCSV(relationshipsFilePath, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
     std::vector<RelationshipInfo> relationshipInfo;

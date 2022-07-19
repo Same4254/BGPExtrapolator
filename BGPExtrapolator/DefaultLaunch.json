@@ -1,22 +1,26 @@
 {
     "Relationships": "./TestCases/RealData-Relationships.tsv",
-    "Output": "./TestCases/RealData-Results.tsv",
     "Announcements": "./TestCases/RealData-Announcements.tsv",
+    "Output": "./TestCases/RealData-Results.tsv",
 
     // NOTE: Do *NOT* use stub removal and origin only at the same time
+    "Seeding Config": {
+        // Options: true, false. Default: false
+        "Origin Only": false,
+
+        // Options: Prefer Lowest ASN, Random. Default: Prefer Lowest ASN
+        "Tiebraking Method": "Prefer Lowest ASN",
+
+        // Options: Prefer Newer, Prefer Older, Disabled. Default: Prefer Newer
+        "Timestamp Comparison Method": "Prefer Newer"
+    },
 
     // Options: true, false. Default: false
-    "Stub_Removal": false,
+    "Stub Removal": false,
 
     // Options: true, false. Default: false
-    "Origin_Only": false ,
-
-    // Options: Prefer_Lowest_ASN, Random. Default: Prefer_Lowest_ASN
-    "Tiebraking_Method": "Prefer_Lowest_ASN",
-
-    // Options: Prefer_Newer, Prefer_Older, Disabled. Default: Prefer_Newer
-    "Timestamp_Comparison_Method": "Prefer_Newer",
+    "Write Results After Seeding": false,
 
     // Options: list of ASNs to dump tracebacks of for every prefix. Empty list will dump every AS. This is the default
-    "Control_Plane_Traceback_ASNs": []
+    "Control Plane Traceback ASNs": []
 }

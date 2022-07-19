@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <map>
+#include <memory>
 
 #include <limits>
 #include <rapidcsv.h>
@@ -93,7 +94,7 @@ protected:
 
     // ASes are not stored individually. An "AS" is just an index in these structures
     // If stubs are excluded, then they will not have an ID or any memory allocated to them
-	std::vector<PropagationPolicy*> idToPolicy;
+	std::vector<std::unique_ptr<PropagationPolicy>> idToPolicy;
 
     // Each rank contains the IDs of the ASes in that rank (rank 0 (index 0) is the lowest propagation rank)
 	std::vector<std::vector<ASN_ID>> rankToIDs;
@@ -110,8 +111,6 @@ protected:
     LocalRibs localRibs;
 
 public:
-    static void RunExperimentFromConfig(const std::string &launchJSONPath);
-
 	/**
 	 * Constructs a graph from the given CAIDA relationship dataset.
      * Relationships between ASes will be constructed and they will be organized by their propagation_rank
@@ -129,25 +128,6 @@ public:
      * @param stubRemoval -> Whether to enable stub removal optimization
 	*/
 	Graph(const std::string &relationshipsFilePath, const bool stubRemoval);
-    
-    /**
-     * Constructs a graph from the previous state it was in
-     * This state includes *everything* about the program
-     *
-     * This *will* allocate local ribs.
-     */
-    Graph(const std::string &stateFilePath);
-
-    /**
-     * Dumps the state of the program into a file.
-     * This could be used to resume computation at a later date, or before tracebacks at a later time
-     * The benefit of is that dumping the state of the program is much faster and smaller than dumping *all* of the traces
-     *
-     * The program state dump will be no longer than the amount of RAM the program uses after completed seeding
-     */
-    void DumpState(const std::string &stateFilePath);
-
-	~Graph();
 
 	/**
 	 * Resets all announcements to their default state. No memory is deallocated.
@@ -245,8 +225,8 @@ public:
 		return announcementStaticData[index];
 	}
 
-	inline PropagationPolicy* GetPropagationPolicy(const ASN_ID& asnID) {
-		return idToPolicy[asnID];
+	inline const PropagationPolicy& GetPropagationPolicy(const ASN_ID& asnID) {
+		return *idToPolicy[asnID];
 	}
 
     inline size_t GetNumASes() const { return localRibs.GetNumASes(); }

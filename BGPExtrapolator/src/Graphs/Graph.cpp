@@ -1,9 +1,9 @@
-#include "Graphs/Graph.hpp"
-
-#include "PropagationPolicies/BGPPolicy.hpp"
 #include <chrono>
 #include <stdarg.h>
 #include <cstring>
+
+#include "Graphs/Graph.hpp"
+#include "Propagation_ImportPolicies/BGPPolicy.hpp"
 
 //Temporary struct for building the ranks
 struct RelationshipInfo {
@@ -56,113 +56,6 @@ public:
     }
 };
 
-void Graph::RunExperimentFromConfig(const std::string &launchJSONPath) {
-    std::ifstream launchFile(launchJSONPath);
-    nlohmann::json launchJSON = nlohmann::json::parse(launchFile, nullptr, true, true);
-
-    // File Locations
-    auto rel_search = launchJSON.find("Relationships");
-    if (rel_search == launchJSON.end()) {
-        std::cout << "Expected path to relationships TSV file!" << std::endl;
-        return;
-    }
-
-    auto output_search = launchJSON.find("Output");
-    if (output_search == launchJSON.end()) {
-        std::cout << "Expected path to output TSV file!" << std::endl;
-        return;
-    }
-
-    auto announcements_search = launchJSON.find("Announcements");
-    if (announcements_search == launchJSON.end()) {
-        std::cout << "Expected path to output TSV file!" << std::endl;
-        return;
-    }
-
-    std::string relationshipsFilePath = rel_search.value();
-    std::string outputFilePath = output_search.value();
-    std::string announcementsFilePath = announcements_search.value();
-
-    // Seeding Options
-    SeedingConfiguration config;
-
-    auto origin_only_search = launchJSON.find("Origin_Only");
-    if (origin_only_search == launchJSON.end()) {
-        config.originOnly = false;
-    } else {
-        if(!origin_only_search.value().is_boolean()) {
-            std::cout << "Expected boolean value for origin only!" << std::endl;
-            return;
-        }
-
-        config.originOnly = origin_only_search.value().get<bool>();
-    }
-
-    auto tiebraking_search = launchJSON.find("Tiebraking_Method");
-    if (tiebraking_search == launchJSON.end()) {
-        config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
-    } else {
-        std::string method = tiebraking_search.value();
-        if (method == "Prefer_Lowest_ASN") {
-            config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
-        } else if (method == "Random") {
-            config.tiebrakingMethod = TIEBRAKING_METHOD::RANDOM;
-        } else {
-            std::cout << "Unknown tiebraking method!" << std::endl;
-            return;
-        }
-    }
-
-    auto timestamp_search = launchJSON.find("Timestamp_Comparison_Method");
-    if (timestamp_search == launchJSON.end()) {
-        config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
-    } else {
-        std::string method = timestamp_search.value();
-        if (method == "Prefer_Newer") {
-            config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
-        } else if (method == "Prefer_Older") {
-            config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_OLDER;
-        } else if (method == "Disabled") {
-            config.timestampComparison = TIMESTAMP_COMPARISON::DISABLED;
-        } else {
-            std::cout << "Unknown Timestamp comparison method!" << std::endl;
-            return;
-        }
-    }
-
-    bool stubRemoval = false;
-    auto stubRemovalSearch = launchJSON.find("Stub_Removal");
-    if (stubRemovalSearch != launchJSON.end()) {
-        if (stubRemovalSearch.value().is_boolean()) {
-            stubRemoval = stubRemovalSearch.value().get<bool>();
-        } else {
-            std::cout << "Unknown value for stub removal" << std::endl;
-            return;
-        }
-    }
-    
-    std::vector<ASN> controlPlaneASNs;
-    auto control_plane_trace_ASNs_search = launchJSON.find("Control_Plane_Traceback_ASNs");
-    if (control_plane_trace_ASNs_search != launchJSON.end()) {
-        if (control_plane_trace_ASNs_search.value().is_array()) {
-            controlPlaneASNs = control_plane_trace_ASNs_search.value().get<std::vector<ASN>>();
-        } else {
-            std::cout << "Expected list of ASNs for control plane traceback!" << std::endl;
-            return;
-        }
-    }
-
-    for (auto asn : controlPlaneASNs) {
-        std::cout << asn << std::endl;
-    }
-    
-    launchFile.close();
-
-    Graph g(relationshipsFilePath, stubRemoval);
-    g.SeedBlock(announcementsFilePath, config);
-    g.GenerateTracebackResultsCSV(outputFilePath, controlPlaneASNs);
-}
-
 Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) : stubRemoval(stubRemoval) {
     rapidcsv::Document relationshipsCSV(relationshipsFilePath, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
     std::vector<RelationshipInfo> relationshipInfo;
@@ -212,7 +105,7 @@ Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) :
 
         relationshipInfo.push_back(info);
 
-        idToPolicy.push_back(new BGPPolicy(info.asn, info.asnID));
+        idToPolicy.push_back(std::unique_ptr<BGPPolicy>(new BGPPolicy(info.asn, info.asnID)));
 
         nextID++;
     }
@@ -268,203 +161,6 @@ Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) :
             asIDToCustomerIDs[i].push_back( { customer, idSearch->second } );
         }
     }
-}
-
-Graph::Graph(const std::string &stateFilePath) {
-    FILE *fp = fopen(stateFilePath.c_str(), "rb");
-    
-    size_t numASes, numPrefixes;
-    fscanf(fp, "%lu,%lu,", &numASes, &numPrefixes);
-
-    // asnToID
-    asnToID.reserve(numASes);
-    for (size_t i = 0; i < numASes; i++) {
-        ASN asn;
-        ASN_ID id;
-        
-        fscanf(fp, "%i,%i,", &asn, &id);
-        asnToID.insert(std::make_pair(asn, id));
-    }
-
-    // idToASN
-    idToASN.reserve(numASes);
-    for (size_t i = 0; i < numASes; i++) {
-        ASN asn;
-
-        fscanf(fp, "%i,", &asn);
-        idToASN.push_back(asn);
-    }
-
-    // relationshipPriority
-    size_t relPrioritySize;
-    fscanf(fp, "%lu,", &relPrioritySize);
-    for (size_t i = 0; i < relPrioritySize; i++) {
-        ASN asn1, asn2;
-        uint8_t priority;
-
-        fscanf(fp, "%i,%i,%c,", &asn1, &asn2, &priority);
-        relationshipPriority.insert(std::make_pair(std::make_pair(asn1, asn2), priority));
-    }
-
-    //rankToIDs
-    size_t rankToIDsSize;
-    fscanf(fp, "%lu,", &rankToIDsSize);
-
-    rankToIDs.resize(rankToIDsSize);
-    for (size_t i = 0; i < rankToIDsSize; i++) {
-        size_t length; 
-        fscanf(fp, "%lu,", &length);
-        rankToIDs[i].resize(length);
-
-        for (size_t j = 0; j < length; j++) {
-            fscanf(fp, "%i,", &rankToIDs[i][j]);
-        }
-    }
-
-    asIDToProviderIDs.resize(numASes);
-    for (size_t i = 0; i < numASes; i++) {
-        size_t length;
-        fscanf(fp, "%lu,", &length);
-
-        asIDToProviderIDs[i].resize(length);
-        for (size_t j = 0; j < length; j++) {
-            fscanf(fp, "%i,%i,", &asIDToProviderIDs[i][j].id, &asIDToProviderIDs[i][j].asn);
-        }
-    }
-
-    asIDToPeerIDs.resize(numASes);
-    for (size_t i = 0; i < numASes; i++) {
-        size_t length;
-        fscanf(fp, "%lu,", &length);
-
-        asIDToPeerIDs[i].resize(length);
-        for (size_t j = 0; j < length; j++) {
-            fscanf(fp, "%i,%i,", &asIDToPeerIDs[i][j].id, &asIDToPeerIDs[i][j].asn);
-        }
-    }
-
-    asIDToCustomerIDs.resize(numASes);
-    for (size_t i = 0; i < numASes; i++) {
-        size_t length;
-        fscanf(fp, "%lu,", &length);
-
-        asIDToCustomerIDs[i].resize(length);
-        for (size_t j = 0; j < length; j++) {
-            fscanf(fp, "%i,%i,", &asIDToCustomerIDs[i][j].id, &asIDToCustomerIDs[i][j].asn);
-        }
-    }
-
-    size_t stubASNToProviderIDSize;
-    fscanf(fp, "%c,%lu,", &stubRemoval, &stubASNToProviderIDSize);
-    stubASNToProviderID.reserve(stubASNToProviderIDSize);
-
-    for (size_t i = 0; i < stubASNToProviderIDSize; i++) {
-        ASN stubASN;
-        ASN_ID providerID;
-
-        fscanf(fp, "%i,%i,", &stubASN, &providerID);
-        stubASNToProviderID.insert(std::make_pair(stubASN, providerID));
-    }
-
-    // static info
-    size_t staticAnnouncementDataSize;
-    fscanf(fp, "%lu,", &staticAnnouncementDataSize);
-    announcementStaticData.resize(staticAnnouncementDataSize);
-    for (auto &data : announcementStaticData) { 
-        char prefixBuff[100];
-        fscanf(fp, "%i,%i,%i,%li,%s ,", &data.origin, &data.prefix.global_id, &data.prefix.block_id, &data.timestamp, prefixBuff);
-
-        data.prefixString.assign(prefixBuff);
-    }
-
-    // cached info
-    localRibs.SetNumASes(numASes);
-    localRibs.SetNumPrefixes(numPrefixes);
-
-    for (auto id = 0; id < GetNumASes(); id++) {
-    for (auto prefixID = 0; prefixID < GetNumPrefixes(); prefixID++) {
-        AnnouncementCachedData &data = GetCachedData(id, prefixID);
-        fscanf(fp, "%i,%i,%hhu,%hhu,%hhu,", &data.recievedFromASN, &data.staticDataIndex, &data.seeded, &data.pathLength, &data.relationship);
-    }}
-
-    fclose(fp);
-}
-
-Graph::~Graph() {
-    for (PropagationPolicy* policy : idToPolicy)
-        delete policy;
-}
-
-void Graph::DumpState(const std::string &stateFilePath) {
-    FILE *fp = fopen(stateFilePath.c_str(), "w");
-    FileBuffer buffer(fp);
-
-    buffer.write("%lu,%lu,", GetNumASes(), GetNumPrefixes());
-
-    // asnToID
-    for (auto p : asnToID)
-        buffer.write("%i,%i,", p.first, p.second);
-
-    // idToASN
-    for (auto asn : idToASN)
-        buffer.write("%i,", asn);
-
-    //relationshipPriority
-    buffer.write("%lu,", relationshipPriority.size());
-    for (auto p : relationshipPriority)
-        buffer.write("%i,%i,%c,", p.first.first, p.first.second, p.second);
-
-    //rankToIDs
-    buffer.write("%lu,", rankToIDs.size());
-    for (auto &rank : rankToIDs) {
-        buffer.write("%lu,", rank.size());
-        for (auto id : rank)
-            buffer.write("%i,", id);
-    }
-
-    // asIDToProviderIDs
-    for (auto &providers : asIDToProviderIDs) {
-        buffer.write("%lu,", providers.size());
-        for (auto &p : providers) 
-            buffer.write("%i,%i,", p.id, p.asn);
-    }
-
-    // asIDToPeerIDs
-    for (auto &peers : asIDToPeerIDs) {
-        buffer.write("%lu,", peers.size());
-        for (auto &p : peers) 
-            buffer.write("%i,%i,", p.id, p.asn);
-    }
-
-    // asIDToCustomerIDs
-    for (auto &customers : asIDToCustomerIDs) {
-        buffer.write("%lu,", customers.size());
-        for (auto &p : customers) 
-            buffer.write("%i,%i,", p.id, p.asn);
-    }
-
-    buffer.write("%c,%lu,", stubRemoval, stubASNToProviderID.size());
-    for (auto &p : stubASNToProviderID) {
-        buffer.write("%i,%i,", p.first, p.second);
-    }
-
-    // static info
-    buffer.write("%lu,", announcementStaticData.size());
-    for (auto i = 0; i < announcementStaticData.size(); i++) {
-        const AnnouncementStaticData &data = announcementStaticData[i];
-        buffer.write("%i,%i,%i,%li,%s ,", data.origin, data.prefix.global_id, data.prefix.block_id, data.timestamp, data.prefixString.c_str());
-    }
-
-    // cached info
-    for (auto id = 0; id < GetNumASes(); id++) {
-        for (auto prefixID = 0; prefixID < GetNumPrefixes(); prefixID++) {
-            const AnnouncementCachedData &data = GetCachedData(id, prefixID);
-            buffer.write("%i,%i,%hhu,%hhu,%hhu,", data.recievedFromASN, data.staticDataIndex, data.seeded, data.pathLength, data.relationship);
-        }
-    }
-
-    buffer.flush();
-    fclose(fp);
 }
 
 void Graph::ResetAllAnnouncements() {
@@ -666,11 +362,14 @@ void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const ui
 
     ASN_ID asnID = starting_search->second;
     ASN asn = startingASN;
+    size_t path_length = 0;
 
     //origin recieves from itself
     while (true) {
         const AnnouncementCachedData& ann = GetCachedData_ReadOnly(asnID, prefixBlockID);
         as_path.push_back(asn);
+
+        path_length++;
 
         if (asn == ann.recievedFromASN)
             break;
@@ -678,18 +377,11 @@ void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const ui
         asn = ann.recievedFromASN;
         //asnID = asnToID.at(asn);
         
-        //Check if the next ASN is somehwere we have already been before
-        bool cycle = false;
-        for (auto visited_asn : as_path) {
-            if (visited_asn == asn) {
-                std::cout << "Cycle Found!" << std::endl;
-                cycle = true;
-            }
-        }
-
-        if (cycle)
+        // If the path length is greater than 99, there is a cycle or soem other kind of problem. Path lengths should not be this long
+        if (path_length >= 99)
             break;
 
+        // TODO: change the recieved_frrom to be an id, not an ASN
         auto id_search = asnToID.find(asn);
         if (id_search == asnToID.end()) {
             as_path.push_back(asn);

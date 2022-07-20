@@ -102,8 +102,8 @@ protected:
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToPeerIDs;
 	std::vector<std::vector<ASN_ASNID_PAIR>> asIDToCustomerIDs;
 
-    // The only evidence of stubs will be here. NOTE: This structure will be populated regardless of the stubRemoval flag
     bool stubRemoval;
+    // This structure will be populated regardless of the stubRemoval flag
     std::unordered_map<ASN, ASN_ID> stubASNToProviderID;
 
 	std::vector<AnnouncementStaticData> announcementStaticData;

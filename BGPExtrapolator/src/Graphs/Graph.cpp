@@ -175,7 +175,7 @@ void Graph::ResetAllNonSeededAnnouncements() {
     for (int i = 0; i < GetNumASes(); i++) {
     for (int j = 0; j < GetNumPrefixes(); j++) {
         AnnouncementCachedData& ann = GetCachedData(i, j);
-        if (ann.seeded)
+        if (ann.isSeeded())
             continue;
 
         ann.SetDefaultState();
@@ -220,12 +220,12 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 
     AnnouncementStaticData &staticData = announcementStaticData[staticDataIndex];
 
-    staticData.origin = asPath[asPath.size() - 1];
+    staticData.originASN = asPath[asPath.size() - 1];
     staticData.prefix = prefix;
     staticData.timestamp = timestamp;
     staticData.prefixString = prefixString;
 
-    ASN_ID lastID = 0;
+    ASN_ID lastID;
     bool lastIDSet = false;
 
     int end_index = config.originOnly ? asPath.size() - 1 : 0;
@@ -243,10 +243,10 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 
                 AnnouncementCachedData &providerAnn = localRibs.GetAnnouncement(stubSearch->second, prefix.block_id);
                 if (providerAnn.isDefaultState()) {
-                    providerAnn.relationship = RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER;
-                    providerAnn.staticDataIndex = staticDataIndex;
-                    providerAnn.pathLength = 2;
-                    providerAnn.recievedFromASN = asPath[i];
+                    providerAnn.SetRelationship(RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER);
+                    providerAnn.SetStaticDataIndex(staticDataIndex);
+                    providerAnn.SetPathLength(2);
+                    providerAnn.SetRecievedFromID(stubSearch->second);
                 }
             }
             continue;
@@ -256,12 +256,12 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
         if (i < asPath.size() - 1 && asPath[i] == asPath[i + 1])
             continue;
 
-        ASN asn = asn_search->first;
-        ASN_ID asn_id = asn_search->second;
+        ASN currentASN = asn_search->first;
+        ASN_ID currentID = asn_search->second;
 
         uint8_t relationship = RELATIONSHIP_PRIORITY_ORIGIN;
         if (i < asPath.size() - 1) {
-            auto search = relationshipPriority.find(std::make_pair(asPath[i + 1], asn));
+            auto search = relationshipPriority.find(std::make_pair(asPath[i + 1], currentASN));
             if (search == relationshipPriority.end()) {
                 //TODO check for stub: https://github.com/c-morris/BGPExtrapolator/commit/364abb3d70d8e6aa752450e756348b2e1f82c739
                 relationship = RELATIONSHIP_PRIORITY_BROKEN;
@@ -271,66 +271,66 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
         }
 
         uint8_t newPathLength = asPath.size() - i;
-
-        //TODO: Check the local_rib of the provider. I do not think this works with stub removal
-        ASN_ID recieved_from_id = asn_id;
-        if (i < asPath.size() - 1) {
-            auto previous_search = asnToID.find(asPath[i + 1]);
-            if (previous_search == asnToID.end() && lastIDSet) {
-                recieved_from_id = lastID;
-            } else if (previous_search != asnToID.end()) {
-                recieved_from_id = previous_search->second;
-            }
-        }
+        ASN_ID recievedFromID;
+        if (lastIDSet)
+            recievedFromID = lastID;
+        else
+            recievedFromID = currentID;
 
         lastIDSet = true;
-        lastID = asn_id;
+        lastID = currentID;
 
         //TODO: Not all of these if-statements plz
-        // 
+         
         //If there exists an announcement for this prefix already
-        AnnouncementCachedData& currentAnn = GetCachedData(asn_id, prefix.block_id);
+        AnnouncementCachedData& currentAnn = GetCachedData(currentID, prefix.block_id);
 
-        //if (currentAnn.staticData != nullptr) {
-        if (currentAnn.pathLength != 0) {
-            int64_t currentTimestamp = announcementStaticData[currentAnn.staticDataIndex].timestamp;
+        //Recieve from itself if it is the origin
+        ASN recieved_from_asn = i < asPath.size() - 1 ? asPath[i + 1] : currentASN;
+
+        if (!currentAnn.isDefaultState()) {
+            const AnnouncementStaticData &currentStaticData = announcementStaticData[currentAnn.GetStaticDataIndex()];
+            int64_t currentTimestamp = currentStaticData.timestamp;
+            ASN currentRecievedFromASN;
+
+            if (stubRemoval && (currentAnn.GetRecievedFromID() == currentID && currentAnn.GetPathLength() == 2)) {
+                // if this is a provider to a stub, the ann will point back to the provider
+                // but that is not the correct ASN. Get the stub's ASN instead
+                currentRecievedFromASN = currentStaticData.originASN;
+            } else {
+                currentRecievedFromASN = idToASN[currentAnn.GetRecievedFromID()];
+            }
 
             if (config.timestampComparison == TIMESTAMP_COMPARISON::PREFER_NEWER && timestamp > currentTimestamp)
                 continue;
             else if (config.timestampComparison == TIMESTAMP_COMPARISON::PREFER_OLDER && timestamp < currentTimestamp)
                 continue;
 
-            //if (timestamp == currentAnn.staticData->timestamp) {
             if (timestamp == currentTimestamp) {
-                //if (recieving_as.loc_rib[prefix.block_id].priority.allFields > priority.allFields)
-                //  continue;
-
-                if (currentAnn.relationship > relationship || currentAnn.pathLength < newPathLength)
+                uint8_t currentRelationship = currentAnn.GetRelationship();
+                uint8_t currentPathLength = currentAnn.GetPathLength();
+                if (currentRelationship > relationship || currentPathLength < newPathLength)
                     continue;
 
-                if (currentAnn.relationship == relationship && currentAnn.pathLength == newPathLength) {
+                if (currentRelationship == relationship && currentPathLength == newPathLength) {
                     if (config.tiebrakingMethod == TIEBRAKING_METHOD::RANDOM) {
                         if (rand() % 2 == 0)
                             continue;
                     } else {//lowest recieved_from ASN wins
-                        if (currentAnn.recievedFromASN < idToASN[recieved_from_id])
+                        if (currentRecievedFromASN < recieved_from_asn)
                             continue;
                     }
                 }
             }
         }
 
-        //Recieve from itself if it is the origin
-        ASN recieved_from_asn = i < asPath.size() - 1 ? asPath[i + 1] : asn;
-
         //accept the announcement
         //recieving_as.loc_rib[prefix.block_id].fill(recieved_from_asn, priority, staticData);
-        currentAnn.pathLength = newPathLength;
-        currentAnn.recievedFromASN = recieved_from_asn;
-        currentAnn.relationship = relationship;
-        currentAnn.seeded = 1;
-        //currentAnn.staticData = &staticData;
-        currentAnn.staticDataIndex = staticDataIndex;
+        currentAnn.SetPathLength(newPathLength);
+        currentAnn.SetRecievedFromID(recievedFromID);
+        currentAnn.SetRelationship(relationship);
+        currentAnn.SetSeeded(true);
+        currentAnn.SetStaticDataIndex(staticDataIndex);
     }
 }
 
@@ -361,34 +361,27 @@ void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const ui
         return;
 
     ASN_ID asnID = starting_search->second;
-    ASN asn = startingASN;
-    size_t path_length = 0;
+    size_t path_length = 1;
+    as_path.push_back(startingASN);
 
-    //origin recieves from itself
-    while (true) {
+    // If the path length is greater than 99, there is a cycle or soem other kind of problem. Path lengths should not be this long
+    while (path_length < 99) {
         const AnnouncementCachedData& ann = GetCachedData_ReadOnly(asnID, prefixBlockID);
-        as_path.push_back(asn);
 
+        // origin recieves from itself
+        if (ann.GetRecievedFromID() == asnID) {
+            if (ann.GetPathLength() == 2) {
+                // this means that the origin was not in the graph (stub removal)
+                // but we can get the ASN from the static info since it the origin
+                as_path.push_back(GetStaticData_ReadOnly(ann.GetStaticDataIndex()).originASN);
+                path_length++;
+            }
+            break;
+        }
+
+        asnID = ann.GetRecievedFromID();
+        as_path.push_back(idToASN[asnID]);
         path_length++;
-
-        if (asn == ann.recievedFromASN)
-            break;
-
-        asn = ann.recievedFromASN;
-        //asnID = asnToID.at(asn);
-        
-        // If the path length is greater than 99, there is a cycle or soem other kind of problem. Path lengths should not be this long
-        if (path_length >= 99)
-            break;
-
-        // TODO: change the recieved_frrom to be an id, not an ASN
-        auto id_search = asnToID.find(asn);
-        if (id_search == asnToID.end()) {
-            as_path.push_back(asn);
-            break;
-        } else {
-            asnID = id_search->second;
-        } 
     }
 }
 
@@ -444,9 +437,9 @@ void Graph::GenerateTracebackResultsCSV(const std::string& resultsFilePath, std:
             Traceback(as_path, asn, prefixBlockID);
 
             //***** Build String
-            AnnouncementStaticData& staticData = announcementStaticData[ann.staticDataIndex];
+            AnnouncementStaticData& staticData = announcementStaticData[ann.GetStaticDataIndex()];
 
-            fileBuffer.write("%s\t%i\t%lli\t{", staticData.prefixString.c_str(), staticData.origin, staticData.timestamp);
+            fileBuffer.write("%s\t%i\t%lli\t{", staticData.prefixString.c_str(), staticData.originASN, staticData.timestamp);
 
             if (stubASN >= 0) {
                 // If the AS path has the stub as the origin and we are dumping the local rib of the stub

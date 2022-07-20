@@ -21,10 +21,10 @@ protected:
                 AnnouncementCachedData& sendingAnnouncement = graph.GetCachedData(neighborID, i);
 
                 if (CompareAnnouncements(graph, currentAnnouncement, neighborASN, sendingAnnouncement, relationshipPriority)) {
-                    currentAnnouncement.pathLength = sendingAnnouncement.pathLength + 1;
-                    currentAnnouncement.recievedFromASN = neighborASN;
-                    currentAnnouncement.relationship = relationshipPriority;
-                    currentAnnouncement.staticDataIndex = sendingAnnouncement.staticDataIndex;
+                    currentAnnouncement.SetPathLength(sendingAnnouncement.GetPathLength() + 1);
+                    currentAnnouncement.SetRecievedFromID(neighborID);
+                    currentAnnouncement.SetRelationship(relationshipPriority);
+                    currentAnnouncement.SetStaticDataIndex(sendingAnnouncement.GetStaticDataIndex());
                 }
             }
         }
@@ -46,25 +46,31 @@ public:
      * @return (true) if the sending announcement should replace the current announcement. False if it should not.
     */
     inline bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& currentAnnouncement, const ASN neighborASN, const AnnouncementCachedData& sendingAnnouncement, const uint8_t& relationshipPriority) {
-        if (sendingAnnouncement.isDefaultState() || currentAnnouncement.seeded)
+        if (sendingAnnouncement.isDefaultState() || currentAnnouncement.isSeeded())
             return false;
 
         if (currentAnnouncement.isDefaultState())
             return true;
 
-        if (relationshipPriority > currentAnnouncement.relationship) {
+        if (relationshipPriority > currentAnnouncement.GetRelationship()) {
             return true;
-        } else if (relationshipPriority == currentAnnouncement.relationship) {
-            if (sendingAnnouncement.pathLength + 1 < currentAnnouncement.pathLength) {
+        } else if (relationshipPriority == currentAnnouncement.GetRelationship()) {
+            if (sendingAnnouncement.GetPathLength() + 1 < currentAnnouncement.GetPathLength()) {
                 return true;
-            } else if (sendingAnnouncement.pathLength + 1 == currentAnnouncement.pathLength) {
-                int64_t sendingTimestamp = graph.GetStaticData_ReadOnly(sendingAnnouncement.staticDataIndex).timestamp;
-                int64_t currentTimestamp = graph.GetStaticData_ReadOnly(currentAnnouncement.staticDataIndex).timestamp;
+            } else if (sendingAnnouncement.GetPathLength() + 1 == currentAnnouncement.GetPathLength()) {
+                int64_t sendingTimestamp = graph.GetStaticData_ReadOnly(sendingAnnouncement.GetStaticDataIndex()).timestamp;
+                int64_t currentTimestamp = graph.GetStaticData_ReadOnly(currentAnnouncement.GetStaticDataIndex()).timestamp;
 
                 if (sendingTimestamp > currentTimestamp) {
                     return true;
                 } else if (sendingTimestamp == currentTimestamp) {
-                    return neighborASN < currentAnnouncement.recievedFromASN;
+                    ASN asnToCompare;
+                    if (currentAnnouncement.GetRecievedFromID() == asnID && currentAnnouncement.GetPathLength() == 2)
+                        asnToCompare = graph.GetStaticData_ReadOnly(currentAnnouncement.GetStaticDataIndex()).originASN;
+                    else
+                        asnToCompare = graph.GetASN(currentAnnouncement.GetRecievedFromID());
+
+                    return neighborASN < asnToCompare;
                 }
             }
         }

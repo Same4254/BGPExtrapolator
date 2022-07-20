@@ -4,6 +4,13 @@
 
 #include <chrono>
 
+const char pathSeparator =
+#ifdef _WIN32
+                            '\\';
+#else
+                            '/';
+#endif
+
 void Usage(bool incorrect) {
     if (incorrect)
         std::cout << "Incorrect usage, please see the correct options below." << std::endl;
@@ -17,19 +24,19 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     nlohmann::json launchJSON = nlohmann::json::parse(launchFile, nullptr, true, true);
 
     // File Locations
-    auto rel_search = launchJSON.find("Relationships");
+    auto rel_search = launchJSON.find("Relationships File");
     if (rel_search == launchJSON.end()) {
         std::cout << "Expected path to relationships TSV file!" << std::endl;
         return;
     }
 
-    auto output_search = launchJSON.find("Output");
+    auto output_search = launchJSON.find("Output Folder");
     if (output_search == launchJSON.end()) {
         std::cout << "Expected path to output TSV file!" << std::endl;
         return;
     }
 
-    auto announcements_search = launchJSON.find("Announcements");
+    auto announcements_search = launchJSON.find("Announcements File");
     if (announcements_search == launchJSON.end()) {
         std::cout << "Expected path to output TSV file!" << std::endl;
         return;
@@ -38,6 +45,23 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     std::string relationshipsFilePath = rel_search.value();
     std::string outputFilePath = output_search.value();
     std::string announcementsFilePath = announcements_search.value();
+
+    if (outputFilePath == "") {
+        std::cout << "Output Folder cannot be an empty string!" << std::endl;
+        return;
+    } else if (outputFilePath.back() != pathSeparator) {
+        outputFilePath += pathSeparator;
+    }
+
+    if (relationshipsFilePath == "") {
+        std::cout << "Relationships file path cannot be an empty string!" << std::endl;
+        return;
+    }
+
+    if (announcementsFilePath == "") {
+        std::cout << "Announcements file path cannot be an empty string!" << std::endl;
+        return;
+    }
 
     // Seeding Options
     SeedingConfiguration config;
@@ -139,13 +163,13 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     auto time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
     std::cout << "Seeding Time: " << time.count() << std::endl;
 
-    //if (dump_after_seeding) {
-    //    t1 = std::chrono::high_resolution_clock::now();
-    //    g.GenerateTracebackResultsCSV(outputFilePath.replace(), controlPlaneASNs);
-    //    t2 = std::chrono::high_resolution_clock::now();
-    //    
-    //    std::cout << "Writing Time: " << time.count() << "s" << std::endl;
-    //}
+    if (dump_after_seeding) {
+        t1 = std::chrono::high_resolution_clock::now();
+        g.GenerateTracebackResultsCSV(outputFilePath + "Results_Seeding.tsv", controlPlaneASNs);
+        t2 = std::chrono::high_resolution_clock::now();
+        
+        std::cout << "Writing Time: " << time.count() << "s" << std::endl;
+    }
 
     t1 = std::chrono::high_resolution_clock::now();
     g.Propagate();
@@ -156,7 +180,7 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
 
     t1 = std::chrono::high_resolution_clock::now();
-    g.GenerateTracebackResultsCSV(outputFilePath, controlPlaneASNs);
+    g.GenerateTracebackResultsCSV(outputFilePath + "Results.tsv", controlPlaneASNs);
     t2 = std::chrono::high_resolution_clock::now();
 
     std::cout << "Writing Time: " << time.count() << "s" << std::endl;

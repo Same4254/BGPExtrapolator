@@ -1,7 +1,7 @@
 {
-    "Relationships": "./TestCases/RealData-Relationships.tsv",
-    "Announcements": "./TestCases/RealData-Announcements.tsv",
-    "Output": "./TestCases/RealData-Results.tsv",
+    "Relationships File": "./TestCases/RealData-Relationships.tsv",
+    "Announcements File": "./TestCases/RealData-Announcements.tsv",
+    "Output Folder": "./TestCases/",
 
     // NOTE: Do *NOT* use stub removal and origin only at the same time
     "Seeding Config": {

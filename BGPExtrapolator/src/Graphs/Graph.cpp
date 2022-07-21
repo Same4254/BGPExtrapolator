@@ -325,7 +325,6 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
         }
 
         //accept the announcement
-        //recieving_as.loc_rib[prefix.block_id].fill(recieved_from_asn, priority, staticData);
         currentAnn.SetPathLength(newPathLength);
         currentAnn.SetRecievedFromID(recievedFromID);
         currentAnn.SetRelationship(relationship);

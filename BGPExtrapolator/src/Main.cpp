@@ -6,9 +6,9 @@
 
 const char pathSeparator =
 #ifdef _WIN32
-                            '\\';
+    '\\';
 #else
-                            '/';
+    '/';
 #endif
 
 void Usage(bool incorrect) {
@@ -226,12 +226,12 @@ int main(int argc, char *argv[]) {
         config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
         config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
 
-        Graph graphWithStubs("TestCases/RealData-Relationships.tsv", false);
+        Graph g("TestCases/RealData-Relationships.tsv", true);
 
         std::cout << "Seeding!" << std::endl;
 
         auto t1 = std::chrono::high_resolution_clock::now();
-        graphWithStubs.SeedBlock("TestCases/RealData-Announcements.tsv", config);
+        g.SeedBlock("TestCases/RealData-Announcements.tsv", config);
         auto t2 = std::chrono::high_resolution_clock::now();
 
         auto time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
 
         t1 = std::chrono::high_resolution_clock::now();
         
-        graphWithStubs.Propagate();
+        g.Propagate();
 
         t2 = std::chrono::high_resolution_clock::now();
 
@@ -247,10 +247,10 @@ int main(int argc, char *argv[]) {
 
         std::cout << "Propatation Time: " << time.count() << "s" << std::endl;
 
-        //std::cout << "Writing Results..." << std::endl;
-        //t1 = std::chrono::high_resolution_clock::now();
-        //graphWithStubs.GenerateTracebackResultsCSV("TestCases/RealResults-Stubs.tsv", {});
-        //t2 = std::chrono::high_resolution_clock::now();
+        std::cout << "Writing Results..." << std::endl;
+        t1 = std::chrono::high_resolution_clock::now();
+        g.GenerateTracebackResultsCSV("TestCases/RealData-Results.tsv", {});
+        t2 = std::chrono::high_resolution_clock::now();
 
         //time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);   
         //std::cout << "Result Written! " << time.count() << std::endl;

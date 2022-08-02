@@ -2,16 +2,15 @@
 
 #include "Graphs/Graph.hpp"
 
-class PropagationPolicy {
+class PropagationImportPolicy {
 public:
     const ASN asn;
     const ASN_ID asnID;
 
-    PropagationPolicy(const ASN &asn, const ASN_ID &asnID) : asn(asn), asnID(asnID) {
+    PropagationImportPolicy(const ASN &asn, const ASN_ID &asnID) : asn(asn), asnID(asnID) {
 
     }
 
-    virtual bool CompareAnnouncements(const Graph& graph, const AnnouncementCachedData& recieverAnnouncement, const ASN senderASN, const AnnouncementCachedData& senderAnnouncement, const uint8_t& relationshipPriority) = 0;
     /**
      * Compares the local rib of this AS with its providers and copies any announcements that are "better"
      * Path length priority should be adjusted to represent the hop from one AS to another.
@@ -19,7 +18,7 @@ public:
      * @param graph 
      * @param providers 
     */
-    virtual void ProcessProviderAnnouncements(Graph &graph, const std::vector<ASN_ASNID_PAIR> &providerIDs) = 0;
+    virtual void ProcessProviderAnnouncements(Graph &graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &provider) = 0;
     
     /**
      * Compares the local rib of this AS with its peers and copies any announcements that are "better"
@@ -28,7 +27,7 @@ public:
      * @param graph
      * @param peers
     */
-    virtual void ProcessPeerAnnouncements(Graph& graph, const std::vector<ASN_ASNID_PAIR>& peerIDs) = 0;
+    virtual void ProcessPeerAnnouncements(Graph& graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &peer) = 0;
     
     /**
      * Compares the local rib of this AS with its customers and copies any announcements that are "better"
@@ -37,5 +36,5 @@ public:
      * @param graph
      * @param customers
     */
-    virtual void ProcessCustomerAnnouncements(Graph& graph, const std::vector<ASN_ASNID_PAIR>& customerIDs) = 0;
+    virtual void ProcessCustomerAnnouncements(Graph& graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &customer) = 0;
 };

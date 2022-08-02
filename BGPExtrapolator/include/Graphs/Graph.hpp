@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -14,6 +17,8 @@
 #include "Announcement.hpp"
 #include "LocalRibs.hpp"
 #include "LocalRibsTransposed.hpp"
+
+#include "Propagation_ExportPolicies/PropagationExportPolicy.hpp"
 
 enum TIMESTAMP_COMPARISON {
 	DISABLED,
@@ -44,7 +49,7 @@ struct ASN_ASNID_PAIR {
 };
 
 //Circular dependency
-class PropagationPolicy;
+class PropagationImportPolicy;
 
 //NOTE. "TODO" marks code changes. "PERF_TODO" marks a *performance* suggestion that needs to be tested
 
@@ -94,7 +99,8 @@ protected:
 
     // ASes are not stored individually. An "AS" is just an index in these structures
     // If stubs are excluded, then they will not have an ID or any memory allocated to them
-	std::vector<std::unique_ptr<PropagationPolicy>> idToPolicy;
+	std::vector<std::unique_ptr<PropagationImportPolicy>> idToImportPolicy;
+    std::vector<std::unique_ptr<PropagationExportPolicy>> idToExportPolicy;
 
     // Each rank contains the IDs of the ASes in that rank (rank 0 (index 0) is the lowest propagation rank)
 	std::vector<std::vector<ASN_ID>> rankToIDs;
@@ -225,8 +231,8 @@ public:
 		return announcementStaticData[index];
 	}
 
-	inline const PropagationPolicy& GetPropagationPolicy(const ASN_ID& asnID) {
-		return *idToPolicy[asnID];
+	inline const PropagationImportPolicy& GetPropagationPolicy(const ASN_ID& asnID) {
+		return *idToImportPolicy[asnID];
 	}
 
     inline size_t GetNumASes() const { return localRibs.GetNumASes(); }

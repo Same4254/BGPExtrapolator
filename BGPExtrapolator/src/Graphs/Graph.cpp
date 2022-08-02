@@ -3,7 +3,8 @@
 #include <cstring>
 
 #include "Graphs/Graph.hpp"
-#include "Propagation_ImportPolicies/BGPPolicy.hpp"
+#include "Propagation_ImportPolicies/BGPDefaultImportPolicy.hpp"
+#include "Propagation_ExportPolicies/ExportAllPolicy.hpp"
 
 //Temporary struct for building the ranks
 struct RelationshipInfo {
@@ -105,7 +106,8 @@ Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) :
 
         relationshipInfo.push_back(info);
 
-        idToPolicy.push_back(std::unique_ptr<BGPPolicy>(new BGPPolicy(info.asn, info.asnID)));
+        idToImportPolicy.push_back(std::unique_ptr<BGPPolicy>(new BGPPolicy(info.asn, info.asnID)));
+        idToExportPolicy.push_back(std::unique_ptr<ExportAllPolicy>(new ExportAllPolicy(info.asn, info.asnID)));
 
         nextID++;
     }
@@ -334,22 +336,50 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 }
 
 void Graph::Propagate() {
+    std::vector<ExportInformation> exportInformation;
+    exportInformation.resize(localRibs.GetNumPrefixes());
+    
     // ************ Propagate Up ************//
 
     // start at the second rank because the first has no customers
-    for (size_t i = 1; i < rankToIDs.size(); i++)
-        for (auto& providerID : rankToIDs[i])
-            idToPolicy[providerID]->ProcessCustomerAnnouncements(*this, asIDToCustomerIDs[providerID]);
+    for (size_t i = 1; i < rankToIDs.size(); i++) {
+        for (auto& providerID : rankToIDs[i]) {
+            for (auto& customerID : asIDToCustomerIDs[providerID]) {
+                for (auto& exportInfo : exportInformation)
+                    exportInfo.SetDefault();
 
-    for (size_t i = 0; i < rankToIDs.size(); i++)
-        for (auto& asID : rankToIDs[i])
-            idToPolicy[asID]->ProcessPeerAnnouncements(*this, asIDToPeerIDs[asID]);
+                idToExportPolicy[customerID.id]->FillExportInformation(exportInformation, idToASN[providerID], providerID);
+                idToImportPolicy[providerID]->ProcessCustomerAnnouncements(*this, exportInformation, customerID);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < rankToIDs.size(); i++) {
+        for (auto& asID : rankToIDs[i]) {
+            for (auto& peerID : asIDToPeerIDs[asID]) {
+                for (auto& exportInfo : exportInformation) 
+                    exportInfo.SetDefault();
+
+                idToExportPolicy[peerID.id]->FillExportInformation(exportInformation, idToASN[asID], asID);
+                idToImportPolicy[asID]->ProcessPeerAnnouncements(*this, exportInformation, peerID);
+             }
+        }
+    }
+
 
     // ************ Propagate Down ************//
     //Customer looks up to the provider and looks at its data, that is why the - 2 is there
-    for (int i = rankToIDs.size() - 2; i >= 0; i--)
-        for (auto& customerID : rankToIDs[i])
-            idToPolicy[customerID]->ProcessProviderAnnouncements(*this, asIDToProviderIDs[customerID]);
+    for (int i = rankToIDs.size() - 2; i >= 0; i--) {
+        for (auto& customerID : rankToIDs[i]) {
+            for (auto& providerID : asIDToProviderIDs[customerID]) {
+                for (auto& exportInfo : exportInformation) 
+                    exportInfo.SetDefault();
+
+                idToExportPolicy[providerID.id]->FillExportInformation(exportInformation, idToASN[customerID], customerID);
+                idToImportPolicy[customerID]->ProcessProviderAnnouncements(*this, exportInformation, providerID);
+            }
+        }
+    }
 }
 
 void Graph::Traceback(std::vector<ASN> &as_path, const ASN startingASN, const uint32_t prefixBlockID) const {

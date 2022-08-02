@@ -1,4 +1,4 @@
-﻿#include "Propagation_ImportPolicies/BGPPolicy.hpp"
+﻿#include "Propagation_ImportPolicies/BGPDefaultImportPolicy.hpp"
 #include "Graphs/Graph.hpp"
 #include "Testing.hpp"
 
@@ -190,6 +190,7 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
  * TODOs:
  *   - Multihome Policies
  *   - Code Cleanup and documentation
+ *     - The naming of variables has gotten out of hand in some places
  *   - Error detection in the mrt data / logging of some kind
  *   - Input config file
  *   - Data-Plane Traces
@@ -231,7 +232,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Seeding!" << std::endl;
 
         auto t1 = std::chrono::high_resolution_clock::now();
-        g.SeedBlock("TestCases/RealData-Announcements.tsv", config);
+        g.SeedBlock("TestCases/RealData-Announcements_4000.tsv", config);
         auto t2 = std::chrono::high_resolution_clock::now();
 
         auto time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);
@@ -249,11 +250,11 @@ int main(int argc, char *argv[]) {
 
         std::cout << "Writing Results..." << std::endl;
         t1 = std::chrono::high_resolution_clock::now();
-        g.GenerateTracebackResultsCSV("TestCases/RealData-Results.tsv", {});
+        //g.GenerateTracebackResultsCSV("TestCases/RealData-Results.tsv", {});
         t2 = std::chrono::high_resolution_clock::now();
 
-        //time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);   
-        //std::cout << "Result Written! " << time.count() << std::endl;
+        time = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1);   
+        std::cout << "Result Written! " << time.count() << "s" << std::endl;
 
         //Graph graphWithoutStubs("TestCases/RealData-Relationships.tsv", true);
 

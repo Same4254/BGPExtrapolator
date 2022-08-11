@@ -24,19 +24,19 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     nlohmann::json launchJSON = nlohmann::json::parse(launchFile, nullptr, true, true);
 
     // File Locations
-    auto rel_search = launchJSON.find("Relationships File");
+    auto rel_search = launchJSON.find("relationships_file");
     if (rel_search == launchJSON.end()) {
         std::cout << "Expected path to relationships TSV file!" << std::endl;
         return;
     }
 
-    auto output_search = launchJSON.find("Output Folder");
+    auto output_search = launchJSON.find("output_folder");
     if (output_search == launchJSON.end()) {
         std::cout << "Expected path to output TSV file!" << std::endl;
         return;
     }
 
-    auto announcements_search = launchJSON.find("Announcements File");
+    auto announcements_search = launchJSON.find("announcements_file");
     if (announcements_search == launchJSON.end()) {
         std::cout << "Expected path to output TSV file!" << std::endl;
         return;
@@ -66,15 +66,8 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     // Seeding Options
     SeedingConfiguration config;
 
-    auto seeding_config_search = launchJSON.find("Seeding Config");
-    if (seeding_config_search == launchJSON.end() || !seeding_config_search.value().is_object()) {
-        std::cout << "Expected a seeding configuration object!" << std::endl;
-        return;
-    }
-
-    const auto seeding_config_JSONobj = seeding_config_search.value();
-    auto origin_only_search = seeding_config_JSONobj.find("Origin Only");
-    if (origin_only_search == seeding_config_JSONobj.end()) {
+    auto origin_only_search = launchJSON.find("seeding_origin_only");
+    if (origin_only_search == launchJSON.end()) {
         config.originOnly = false;
     } else {
         if(!origin_only_search.value().is_boolean()) {
@@ -85,14 +78,14 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
         config.originOnly = origin_only_search.value().get<bool>();
     }
 
-    auto tiebraking_search = seeding_config_JSONobj.find("Tiebraking Method");
-    if (tiebraking_search == seeding_config_JSONobj.end()) {
+    auto tiebraking_search = launchJSON.find("seeding_tiebraking_method");
+    if (tiebraking_search == launchJSON.end()) {
         config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
     } else {
         std::string method = tiebraking_search.value();
-        if (method == "Prefer Lowest ASN") {
+        if (method == "prefer_lowest_asn") {
             config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
-        } else if (method == "Random") {
+        } else if (method == "random") {
             config.tiebrakingMethod = TIEBRAKING_METHOD::RANDOM;
         } else {
             std::cout << "Unknown tiebraking method!" << std::endl;
@@ -100,16 +93,16 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
         }
     }
 
-    auto timestamp_search = launchJSON.find("Timestamp Comparison Method");
+    auto timestamp_search = launchJSON.find("propagation_timestamp_comparison_method");
     if (timestamp_search == launchJSON.end()) {
         config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
     } else {
         std::string method = timestamp_search.value();
-        if (method == "Prefer_Newer") {
+        if (method == "prefer_newer") {
             config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
-        } else if (method == "Prefer_Older") {
+        } else if (method == "prefer_older") {
             config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_OLDER;
-        } else if (method == "Disabled") {
+        } else if (method == "disabled") {
             config.timestampComparison = TIMESTAMP_COMPARISON::DISABLED;
         } else {
             std::cout << "Unknown Timestamp comparison method!" << std::endl;
@@ -118,7 +111,7 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     }
 
     bool stubRemoval = false;
-    auto stubRemovalSearch = launchJSON.find("Stub_Removal");
+    auto stubRemovalSearch = launchJSON.find("stub_removal");
     if (stubRemovalSearch != launchJSON.end()) {
         if (stubRemovalSearch.value().is_boolean()) {
             stubRemoval = stubRemovalSearch.value().get<bool>();
@@ -129,7 +122,7 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     }
     
     std::vector<ASN> controlPlaneASNs;
-    auto control_plane_trace_ASNs_search = launchJSON.find("Control Plane Traceback_ASNs");
+    auto control_plane_trace_ASNs_search = launchJSON.find("control_plane_traceback_asn");
     if (control_plane_trace_ASNs_search != launchJSON.end()) {
         if (control_plane_trace_ASNs_search.value().is_array()) {
             controlPlaneASNs = control_plane_trace_ASNs_search.value().get<std::vector<ASN>>();
@@ -140,7 +133,7 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
     }
 
     bool dump_after_seeding = false;
-    auto dump_after_seeding_search = launchJSON.find("Write Results After Seeding");
+    auto dump_after_seeding_search = launchJSON.find("write_results_after_seeding");
     if (dump_after_seeding_search != launchJSON.end()) {
         if (dump_after_seeding_search.value().is_boolean()) {
             dump_after_seeding = dump_after_seeding_search.value().get<bool>();

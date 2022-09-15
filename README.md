@@ -16,7 +16,6 @@ Once the repository is cloned, use traditional CMake building commands in the to
 
 ```
 ./> pip install cmake
-./> git clone 
 ./> git clone https://github.com/Same4254/BGPExtrapolator.git
 ./> cd BGPExtrapolator
 ./BGPExtrapolator/> mkdir build

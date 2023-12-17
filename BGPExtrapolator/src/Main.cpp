@@ -132,6 +132,21 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
         }
     }
 
+    std::unordered_map<ASN, std::vector<ASN>> customerToProviderPreferences;
+    auto provider_preferences_search = launchJSON.find("provider_preferences");
+    if (provider_preferences_search != launchJSON.end()) {
+        if (provider_preferences_search.value().is_object()) {
+            for (auto it : provider_preferences_search->items())
+            {
+                ASN customer = std::stoi(it.key());
+                customerToProviderPreferences.insert( { customer, it.value().get<std::vector<ASN>>() } );
+            }
+        } else {
+            std::cout << "Expected an object of provider_preferences!" << std::endl;
+            return;
+        }
+    }
+
     bool dump_after_seeding = false;
     auto dump_after_seeding_search = launchJSON.find("write_results_after_seeding");
     if (dump_after_seeding_search != launchJSON.end()) {
@@ -145,7 +160,7 @@ void RunExperimentFromConfig(const std::string &launchJSONPath) {
 
     launchFile.close();
 
-    Graph g(relationshipsFilePath, stubRemoval);
+    Graph g(relationshipsFilePath, customerToProviderPreferences, stubRemoval);
 
     std::cout << "Seeding!" << std::endl;
 
@@ -220,7 +235,7 @@ int main(int argc, char *argv[]) {
         config.tiebrakingMethod = TIEBRAKING_METHOD::PREFER_LOWEST_ASN;
         config.timestampComparison = TIMESTAMP_COMPARISON::PREFER_NEWER;
 
-        Graph g("TestCases/RealData-Relationships.tsv", true);
+        Graph g("TestCases/RealData-Relationships.tsv", {}, true);
 
         std::cout << "Seeding!" << std::endl;
 

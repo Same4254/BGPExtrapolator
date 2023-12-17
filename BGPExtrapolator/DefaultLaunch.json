@@ -20,5 +20,10 @@
     "write_results_after_seeding": false,
 
     // Options: list of ASNs to dump tracebacks of for every prefix. Empty list will dump every AS. This is the default
-    "control_plane_traceback_asns": []
+    "control_plane_traceback_asns": [],
+
+    // Options: 
+    "provider_preferences": {
+	"1": [3, 4, 5]
+    }
 }

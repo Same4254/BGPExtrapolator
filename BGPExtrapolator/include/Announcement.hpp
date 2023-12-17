@@ -16,32 +16,10 @@ struct AnnouncementStaticData {
     std::string prefixString;
 };
 
-
 /**
- * Describes whether or not to export a prefix. Can include other information such as prepending.
- * This is needed if we want to have an AS prepend when sending to one neighbor, or plainly not export to some neighbors all on a prefix-by-prefix basis
- * While there are more performance-oriented ways to go about this, this is the simplest and most extendable
- * If performance during propagation becomes an issue, this could be a place to start getting more clever
- *
- * Defaults to export enabled.
+ * Some serious data packing. Performance is directly proportional to the size
+ * of this structure
  */
-struct ExportInformation {
-private:
-    bool enable;
-
-public:
-    ExportInformation() {
-        SetDefault();
-    }
-
-    inline void SetDefault() {
-        enable = true;
-    }
-
-    inline bool IsEnabled() const { return enable; }
-    inline void SetEnabled(bool enable) { this->enable = enable; }
-};
-
 struct AnnouncementCachedData {
 private:
     ASN_ID recievedFromID;

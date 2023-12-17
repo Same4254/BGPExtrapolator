@@ -10,16 +10,12 @@
 class BGPPolicy final : public PropagationImportPolicy {
 public:
 protected:
-    void ProcessRelationship(Graph& graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &neighbor, const uint8_t& relationshipPriority) {
+    void ProcessRelationship(Graph& graph, const ASN_ASNID_PAIR &neighbor, const uint8_t& relationshipPriority) {
         ASN_ID neighborID = neighbor.id;
         ASN neighborASN = neighbor.asn;
 
         const auto numPrefixes = graph.GetNumPrefixes();
         for (uint32_t i = 0; i < numPrefixes; i++) {
-            const ExportInformation &exp = exportInfo[i];
-            if (!exp.IsEnabled())
-                continue;
-
             AnnouncementCachedData& currentAnnouncement = graph.GetCachedData(asnID, i);
             AnnouncementCachedData& sendingAnnouncement = graph.GetCachedData(neighborID, i);
 
@@ -80,15 +76,17 @@ public:
         return false;
     }
 
-    virtual void ProcessProviderAnnouncements(Graph& graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &provider) {
-        ProcessRelationship(graph, exportInfo, provider, RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER);
+    virtual void ProcessProviderAnnouncements(Graph& graph, const ASN_ASNID_PAIR &provider) {
+        ProcessRelationship(graph, provider, RELATIONSHIP_PRIORITY_PROVIDER_TO_CUSTOMER);
     }
 
-    virtual void ProcessPeerAnnouncements(Graph& graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &peer) {
-        ProcessRelationship(graph, exportInfo, peer, RELATIONSHIP_PRIORITY_PEER_TO_PEER);
+    virtual void ProcessPeerAnnouncements(Graph& graph, const ASN_ASNID_PAIR &peer) {
+        ProcessRelationship(graph, peer, RELATIONSHIP_PRIORITY_PEER_TO_PEER);
     }
 
-    virtual void ProcessCustomerAnnouncements(Graph& graph, const std::vector<ExportInformation> &exportInfo, const ASN_ASNID_PAIR &customer) {
-        ProcessRelationship(graph, exportInfo, customer, RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER);
+    virtual void ProcessCustomerAnnouncements(Graph& graph, const ASN_ASNID_PAIR &customer) {
+        // See if there is a restriction on the customer's prop up
+        if (graph.IsPrefferedProvider(asn, customer.asn))
+            ProcessRelationship(graph, customer, RELATIONSHIP_PRIORITY_CUSTOMER_TO_PROVIDER);
     }
 };

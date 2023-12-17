@@ -9,6 +9,7 @@ Debug/
 RelWithDebInfo/
 compile_commands.json
 .ccls-cache
+build/
 
 # User-specific files
 *.rsuser

@@ -4,7 +4,6 @@
 
 #include "Graphs/Graph.hpp"
 #include "Propagation_ImportPolicies/BGPDefaultImportPolicy.hpp"
-#include "Propagation_ExportPolicies/ExportAllPolicy.hpp"
 
 //Temporary struct for building the ranks
 struct RelationshipInfo {
@@ -57,7 +56,9 @@ public:
     }
 };
 
-Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) : stubRemoval(stubRemoval) {
+Graph::Graph(const std::string &relationshipsFilePath, std::unordered_map<ASN, std::vector<ASN>> customerToProviderPreferences, const bool stubRemoval) 
+    : customerToProviderPreferences(customerToProviderPreferences), stubRemoval(stubRemoval)
+{
     rapidcsv::Document relationshipsCSV(relationshipsFilePath, rapidcsv::LabelParams(0, -1), rapidcsv::SeparatorParams(SEPARATED_VALUES_DELIMETER));
     std::vector<RelationshipInfo> relationshipInfo;
 
@@ -107,7 +108,6 @@ Graph::Graph(const std::string &relationshipsFilePath, const bool stubRemoval) :
         relationshipInfo.push_back(info);
 
         idToImportPolicy.push_back(std::unique_ptr<BGPPolicy>(new BGPPolicy(info.asn, info.asnID)));
-        idToExportPolicy.push_back(std::unique_ptr<ExportAllPolicy>(new ExportAllPolicy(info.asn, info.asnID)));
 
         nextID++;
     }
@@ -336,20 +336,14 @@ void Graph::SeedPath(const std::vector<ASN>& asPath, size_t staticDataIndex, con
 }
 
 void Graph::Propagate() {
-    std::vector<ExportInformation> exportInformation;
-    exportInformation.resize(localRibs.GetNumPrefixes());
-    
     // ************ Propagate Up ************//
 
     // start at the second rank because the first has no customers
     for (size_t i = 1; i < rankToIDs.size(); i++) {
         for (auto& providerID : rankToIDs[i]) {
             for (auto& customerID : asIDToCustomerIDs[providerID]) {
-                for (auto& exportInfo : exportInformation)
-                    exportInfo.SetDefault();
 
-                idToExportPolicy[customerID.id]->FillExportInformation(exportInformation, idToASN[providerID], providerID);
-                idToImportPolicy[providerID]->ProcessCustomerAnnouncements(*this, exportInformation, customerID);
+                idToImportPolicy[providerID]->ProcessCustomerAnnouncements(*this, customerID);
             }
         }
     }
@@ -357,11 +351,7 @@ void Graph::Propagate() {
     for (size_t i = 0; i < rankToIDs.size(); i++) {
         for (auto& asID : rankToIDs[i]) {
             for (auto& peerID : asIDToPeerIDs[asID]) {
-                for (auto& exportInfo : exportInformation) 
-                    exportInfo.SetDefault();
-
-                idToExportPolicy[peerID.id]->FillExportInformation(exportInformation, idToASN[asID], asID);
-                idToImportPolicy[asID]->ProcessPeerAnnouncements(*this, exportInformation, peerID);
+                idToImportPolicy[asID]->ProcessPeerAnnouncements(*this, peerID);
              }
         }
     }
@@ -372,11 +362,7 @@ void Graph::Propagate() {
     for (int i = rankToIDs.size() - 2; i >= 0; i--) {
         for (auto& customerID : rankToIDs[i]) {
             for (auto& providerID : asIDToProviderIDs[customerID]) {
-                for (auto& exportInfo : exportInformation) 
-                    exportInfo.SetDefault();
-
-                idToExportPolicy[providerID.id]->FillExportInformation(exportInformation, idToASN[customerID], customerID);
-                idToImportPolicy[customerID]->ProcessProviderAnnouncements(*this, exportInformation, providerID);
+                idToImportPolicy[customerID]->ProcessProviderAnnouncements(*this, providerID);
             }
         }
     }

@@ -1,0 +1,7 @@
+asn	peers	customers	providers	propagation_rank	stub	stubs
+1	{}	{2}	{}	2	FALSE	{}
+2	{3}	{777,4}	{1}	1	FALSE	{4, 777}
+3	{2}	{6}	{}	1	FALSE	{6}
+4	{}	{}	{2}	0	TRUE	{}
+6	{}	{}	{3}	0	TRUE	{}
+777	{}	{}	{2}	0	TRUE	{}

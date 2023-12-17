@@ -22,8 +22,8 @@
     // Options: list of ASNs to dump tracebacks of for every prefix. Empty list will dump every AS. This is the default
     "control_plane_traceback_asns": [],
 
-    // Options: 
+    // Options: list of customer ASN to provider ASN which are the preffered providers the customer will provide to
     "provider_preferences": {
-	"1": [3, 4, 5]
+	// Example. "1": [3, 4, 5]
     }
 }
